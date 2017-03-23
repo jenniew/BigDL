@@ -1651,6 +1651,7 @@ class Unsqueeze(Model):
 
 
 class Reshape(Model):
+
     '''
     >>> reshape = Reshape([1, 28, 28])
     creating: createReshape
