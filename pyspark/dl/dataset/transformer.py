@@ -30,11 +30,23 @@ def normalizer(mean, std):
 
 
 def pixel_normalizer(mean):
+    '''
+    Normalize with pixel mean array
+    :param mean: mean ndarray for each pixel
+    :return:
+    '''
     return lambda sample: Sample.from_ndarray((sample.features - mean),
                                               sample.label, sample.bigdl_type)
 
 
 def crop(crop_width, crop_height, crop_method='random'):
+    '''
+    Crop image sample to specified width and height
+    :param crop_width: width after cropped
+    :param crop_height: height after cropped
+    :param crop_method: crop method, should be random or center
+    :return: cropped image sample
+    '''
     def func(sample):
         img = sample.features.astype(dtype='uint8')
         h = sample.features.shape[0]
@@ -51,22 +63,31 @@ def crop(crop_width, crop_height, crop_method='random'):
 
 
 def channel_normalizer(mean_b, mean_g, mean_r, std_b, std_g, std_r):
+    '''
+    Normalize image sample by means and std of each channel
+    :param mean_b: mean for blue channel
+    :param mean_g: mean for green channel
+    :param mean_r: mean for red channel
+    :param std_b: std for blue channel
+    :param std_g: std for green channel
+    :param std_r: std for red channel
+    :return: normalized image sample
+    '''
     def func(sample):
         mean = np.array([mean_b, mean_g, mean_r])
         std = np.array([std_b, std_g, std_r])
         mean_sub = sample.features[:,:] - mean
         result = mean_sub[:,:] / std
-        # dtype = Sample.get_dtype(sample.bigdl_type)
-        # shape = sample.features.shape
-        # target = np.empty(shape, dtype=dtype)
-        # for i in xrange(shape(0)):
-        #     for j in xrange(shape(1)):
-        #         target[i, j] = (sample.features[i, j] - mean) / std
         return Sample.from_ndarray(result, sample.label, sample.bigdl_type)
     return func
 
 
 def flip(threshold):
+    '''
+    Flip image sample horizontally
+    :param threshold: if random number is over the threshold, we need to flip image, otherwise, do not filp
+    :return: flipped image sample or original image sample
+    '''
     def func(sample):
         if random.random() > threshold:
             return Sample.from_ndarray(np.flip(sample.features, 1), sample.label, sample.bigdl_type)
@@ -76,6 +97,11 @@ def flip(threshold):
 
 
 def transpose(to_rgb=True):
+    '''
+    Transpose the shape of image sample from (height, width, channel) to (channel, height, width)
+    :param to_rgb: whether need to change channel from bgr to rgb
+    :return: transposed image sample
+    '''
     def func(sample):
         if to_rgb:
             result = sample.features.transpose(2,0,1)[(2,1,0),:,:]

@@ -16,22 +16,12 @@
 #
 # Part of the code originally from Tensorflow
 
-
-import gzip
-
 import numpy as np
 from os import listdir
 from os.path import join
-from pyspark import SparkContext
-from scipy import misc
 import struct
 import cv2
-
-
-from util.common import _py2java
-from util.common import _java2py
 from util.common import Sample
-from util.common import callJavaFunc
 
 
 def read_local(sc, folder, normalize=255.0):
@@ -52,7 +42,6 @@ def read_local(sc, folder, normalize=255.0):
             images.append((join(join(folder, d), f), dirs.index(d)+1))
     # create rdd
     images = sc.parallelize(images)
-    # samples = images.map(lambda (path, label): (misc.imread(path), np.array([label]))) \
     samples = images.map(lambda (path, label): (cv2.imread(path, 1), np.array([label]))) \
         .map(lambda (img, label):
              (resize_image(256, 256), label)) \
@@ -64,7 +53,6 @@ def read_local(sc, folder, normalize=255.0):
 
 
 def resize_image(img, resize_width, resize_height):
-    # return misc.imresize(img, (resize_width, resize_height))
     return cv2.resize(img,(resize_width, resize_height), interpolation = cv2.INTER_AREA)
 
 
@@ -95,10 +83,5 @@ def load_mean_file(mean_file):
     :param mean_file:
     :return:
     '''
-    # means = np.fromfile(mean_file)
     mean_array = np.load(mean_file).transpose(1,2,0)
     return mean_array / 255.0
-
-
-if __name__ == "__main__":
-    read_data_sets("/tmp/mnist/")
