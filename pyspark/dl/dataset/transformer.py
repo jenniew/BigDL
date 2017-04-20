@@ -16,6 +16,9 @@
 
 
 from util.common import Sample
+import random
+import numpy as np
+
 
 
 def normalizer(mean, std):
@@ -24,3 +27,85 @@ def normalizer(mean, std):
     """
     return lambda sample: Sample.from_ndarray((sample.features - mean) / std,
                                               sample.label, sample.bigdl_type)
+
+
+def pixel_normalizer(mean):
+    """
+    Normalize with pixel mean array
+    :param mean: mean ndarray for each pixel
+    :return:
+    """
+    return lambda sample: Sample.from_ndarray((sample.features - mean),
+                                              sample.label, sample.bigdl_type)
+
+
+def crop(crop_width, crop_height, crop_method='random'):
+    """
+    Crop image sample to specified width and height
+    :param crop_width: width after cropped
+    :param crop_height: height after cropped
+    :param crop_method: crop method, should be random or center
+    :return: cropped image sample
+    """
+    def func(sample):
+        h = sample.features.shape[0]
+        w = sample.features.shape[1]
+        if crop_method == 'random':
+            x1 = random.randint(0, w - crop_width)
+            y1 = random.randint(0, h - crop_height)
+        elif crop_method == 'center':
+            x1 = (w - crop_width)/2
+            y1 = (h - crop_height)/2
+        cropped =  sample.features[y1:y1+crop_height, x1:x1+crop_width]
+        return Sample.from_ndarray(cropped, sample.label, sample.bigdl_type)
+    return func
+
+
+def channel_normalizer(mean_b, mean_g, mean_r, std_b, std_g, std_r):
+    """
+    Normalize image sample by means and std of each channel
+    :param mean_b: mean for blue channel
+    :param mean_g: mean for green channel
+    :param mean_r: mean for red channel
+    :param std_b: std for blue channel
+    :param std_g: std for green channel
+    :param std_r: std for red channel
+    :return: normalized image sample
+    """
+    def func(sample):
+        mean = np.array([mean_b, mean_g, mean_r])
+        std = np.array([std_b, std_g, std_r])
+        mean_sub = sample.features[:,:] - mean
+        result = mean_sub[:,:] / std
+        return Sample.from_ndarray(result, sample.label, sample.bigdl_type)
+    return func
+
+
+def flip(threshold):
+    """
+    Flip image sample horizontally
+    :param threshold: if random number is over the threshold, we need to flip image, otherwise, do not filp
+    :return: flipped image sample or original image sample
+    """
+    def func(sample):
+        if random.random() > threshold:
+            # flip with axis 1 which is horizontal flip
+            return Sample.from_ndarray(np.flip(sample.features, 1), sample.label, sample.bigdl_type)
+        else:
+            return sample
+    return func
+
+
+def transpose(to_rgb=True):
+    """
+    Transpose the shape of image sample from (height, width, channel) to (channel, height, width)
+    :param to_rgb: whether need to change channel from bgr to rgb
+    :return: transposed image sample
+    """
+    def func(sample):
+        if to_rgb:
+            result = sample.features.transpose(2,0,1)[(2,1,0),:,:]
+        else:
+            result = sample.features.transpose(2,0,1)
+        return Sample.from_ndarray(result, sample.label,sample.bigdl_type)
+    return func
