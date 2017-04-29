@@ -19,7 +19,7 @@ package com.intel.analytics.bigdl.python.api
 import java.util.{ArrayList => JArrayList, HashMap => JHashMap, List => JList, Map => JMap}
 
 import com.intel.analytics.bigdl._
-import com.intel.analytics.bigdl.dataset.{Sample => JSample, Identity => DIdentity, _}
+import com.intel.analytics.bigdl.dataset.{Identity => DIdentity, Sample => JSample, _}
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity, TensorCriterion, TensorModule}
 import com.intel.analytics.bigdl.numeric._
@@ -31,6 +31,12 @@ import com.intel.analytics.bigdl.visualization.{Summary, TrainSummary, Validatio
 import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.rdd.RDD
 import java.lang.{Integer, Boolean => JBoolean}
+
+import com.intel.analytics.bigdl.example.imageclassification.MlUtils._
+import org.apache.spark.ml.DLClassifier
+import org.apache.spark.ml.param.ParamMap
+import org.apache.spark.sql.DataFrame
+
 import scala.collection.JavaConverters._
 import scala.language.existentials
 import scala.reflect.ClassTag
@@ -1334,6 +1340,19 @@ class PythonBigDL[T: ClassTag](implicit ev: TensorNumeric[T]) extends Serializab
     val result = Tensor[T]().resize(size.asScala.toArray)
     result.apply1(i => ev.fromType(RandomGenerator.RNG.uniform(a, b)))
     toJTensor(result)
+  }
+
+  def createDLClassifier(): DLClassifier[T] = {
+    new DLClassifier[T]()
+  }
+
+  def transform(classifier: DLClassifier[T], dataFrame: DataFrame, paramMap: JMap[Any, Any]):
+  DataFrame = {
+    val params = paramMap.asScala
+    val paramsTrans = ParamMap(
+      classifier.modelTrain -> params("model_train").asInstanceOf[Module[T]],
+      classifier.batchShape -> params("batch_shape").asInstanceOf[JList[Int]].asScala.toArray)
+    classifier.transform(dataFrame,paramsTrans)
   }
 }
 
