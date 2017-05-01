@@ -32,9 +32,9 @@ import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.rdd.RDD
 import java.lang.{Integer, Boolean => JBoolean}
 
-import com.intel.analytics.bigdl.example.imageclassification.MlUtils._
 import org.apache.spark.ml.DLClassifier
 import org.apache.spark.ml.param.ParamMap
+
 import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
@@ -1352,7 +1352,7 @@ class PythonBigDL[T: ClassTag](implicit ev: TensorNumeric[T]) extends Serializab
     val paramsTrans = ParamMap(
       classifier.modelTrain -> params("model_train").asInstanceOf[Module[T]],
       classifier.batchShape -> params("batch_shape").asInstanceOf[JList[Int]].asScala.toArray)
-    classifier.transform(dataFrame,paramsTrans)
+    classifier.transform(dataFrame, paramsTrans)
   }
 }
 

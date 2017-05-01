@@ -90,7 +90,7 @@ class TestImagenetTransformer(unittest.TestCase):
         for sample in channel_normalized.collect():
             channel_normailized_list.append(sample)
         self.assertTrue(
-            np.allclose(channel_normailized_list[0].features[:, :, 0] * 0.1 + 0.1,
+            np.allclose(channel_normailized_list[0].features[:, :, 0] * 0.1 + 0.3,
                         sample_org[0].features[:, :, 0],
                         atol=1e-6, rtol=0))
         self.assertTrue(
@@ -98,7 +98,7 @@ class TestImagenetTransformer(unittest.TestCase):
                         sample_org[0].features[:, :, 1],
                         atol=1e-6, rtol=0))
         self.assertTrue(
-            np.allclose(channel_normailized_list[0].features[:, :, 2] * 0.1 + 0.3,
+            np.allclose(channel_normailized_list[0].features[:, :, 2] * 0.1 + 0.1,
                         sample_org[0].features[:, :, 2],
                         atol=1e-6, rtol=0))
 
