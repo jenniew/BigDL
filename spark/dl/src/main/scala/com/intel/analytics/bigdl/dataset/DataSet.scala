@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import com.intel.analytics.bigdl.DataSet
 import com.intel.analytics.bigdl.dataset.image.{LabeledBGRImage, _}
 import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator}
-import org.apache.hadoop.io.{Text, BytesWritable}
+import org.apache.hadoop.io.Text
 import org.apache.log4j.Logger
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -335,9 +335,8 @@ object DataSet {
    */
   def array[T: ClassTag](localData: Array[T], sc: SparkContext): DistributedDataSet[T] = {
     val nodeNumber = Engine.nodeNumber()
-    val coreNumber = Engine.coreNumber()
     new CachedDistriDataSet[T](
-      sc.parallelize(localData, nodeNumber * coreNumber)
+      sc.parallelize(localData, nodeNumber)
         // Keep this line, or the array will be send to worker every time
         .coalesce(nodeNumber, true)
         .mapPartitions(iter => {
@@ -394,7 +393,7 @@ object DataSet {
     if (isInOrder) {
       require(classTag[T] == classTag[Sample[_]],
         "DataSet.sortData: Only support sort for sample input")
-      data.sortBy(a => a.asInstanceOf[Sample[_]].feature().nElement())
+      data.sortBy(a => a.asInstanceOf[Sample[_]].featureLength(0))
     } else {
       data
     }
@@ -524,7 +523,7 @@ object DataSet {
     def files(url: String, sc: SparkContext, classNum: Int): DistributedDataSet[ByteRecord] = {
       val nodeNumber = Engine.nodeNumber()
       val coreNumber = Engine.coreNumber()
-      val rawData = sc.sequenceFile(url, classOf[Text], classOf[BytesWritable],
+      val rawData = sc.sequenceFile(url, classOf[Text], classOf[Text],
         nodeNumber * coreNumber).map(image => {
         ByteRecord(image._2.copyBytes(), readLabel(image._1).toFloat)
       }).filter(_.label <= classNum)
