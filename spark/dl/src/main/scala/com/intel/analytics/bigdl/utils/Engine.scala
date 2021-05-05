@@ -16,14 +16,18 @@
 
 package com.intel.analytics.bigdl.utils
 
-import java.io.InputStream
+import java.io.{FileOutputStream, InputStream, PrintWriter}
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 import org.apache.log4j.Logger
-import org.apache.spark.{SparkConf, SparkContext}
-
+import org.apache.spark._
 import com.intel.analytics.bigdl.mkl.MKL
+import com.intel.analytics.bigdl.mkl.hardware.{Affinity, CpuInfo}
+import org.apache.spark.utils.SparkUtils
+import py4j.GatewayServer
+
+import scala.util.control.{ControlThrowable, NonFatal}
 
 /**
  * define engine type trait
@@ -31,18 +35,35 @@ import com.intel.analytics.bigdl.mkl.MKL
 sealed trait EngineType
 
 case object MklBlas extends EngineType
+case object MklDnn extends EngineType
+
+/**
+ * define optimizer version trait
+ */
+sealed trait OptimizerVersion
+
+case object OptimizerV1 extends OptimizerVersion
+case object OptimizerV2 extends OptimizerVersion
 
 
 object Engine {
+
+  // Initialize some properties for mkldnn engine. We should call it at the beginning.
+  // Otherwise some properties will have no effect.
+  if (System.getProperty("bigdl.engineType") == "mkldnn" &&
+    System.getProperty("bigdl.multiModels", "false") == "false") {
+    setMklDnnEnvironments()
+  }
+
   @deprecated(
-    "See https://github.com/intel-analytics/BigDL/wiki/Programming-Guide#engine",
+    "See https://bigdl-project.github.io/master/#APIGuide/Engine/",
     "0.1.0")
   def init(nExecutor: Int,
            executorCores: Int,
            onSpark: Boolean): Option[SparkConf] = {
     logger.warn("Engine.init(nExecutor, executorCores, onSpark) is deprecated. " +
       "Please refer to " +
-      "https://github.com/intel-analytics/BigDL/wiki/Programming-Guide#engine")
+      "https://bigdl-project.github.io/master/#APIGuide/Engine/")
     setNodeAndCore(nExecutor, executorCores)
     val res = if (onSpark) {
       require(localMode == false,
@@ -110,6 +131,71 @@ object Engine {
   private var physicalCoreNumber = -1
   private var nodeNum: Int = -1
 
+  @volatile
+  private var gatewayServer: py4j.GatewayServer = null
+
+  private def createGatewayPortFile(port: Int): Unit = {
+    val file = new java.io.File(SparkFiles.getRootDirectory(), "gateway_port")
+    logger.debug(s"Creating JavaGatewayServer port file" +
+      s" on executor-${SparkEnv.get.executorId}:${file.getAbsolutePath}")
+    if (file.exists()) {
+      file.delete()
+    }
+    file.createNewFile()
+    val out = new PrintWriter(file)
+    try {
+      out.print(port)
+      out.flush()
+    } finally {
+      out.close()
+    }
+  }
+
+  private[bigdl] def createJavaGateway(driverPort: Int): Unit = {
+    if (gatewayServer != null) return
+    this.synchronized {
+      if (gatewayServer != null) return
+      gatewayServer = new py4j.GatewayServer(null, 0)
+    }
+
+    logger.info(s"Initializing JavaGatewayServer on executor-${SparkEnv.get.executorId} ")
+    GatewayServer.turnLoggingOn()
+    val thread = new Thread(new Runnable() {
+      override def run(): Unit = try {
+        gatewayServer.start()
+      } catch {
+        case ct: ControlThrowable =>
+          throw ct
+        case t: Throwable =>
+          throw new Exception(s"Uncaught exception " +
+            s"in thread ${Thread.currentThread().getName}, when staring JavaGatewayServer", t)
+      }
+    })
+    thread.setName("py4j-executor-gateway-init")
+    thread.setDaemon(true)
+    thread.start()
+
+    thread.join()
+
+    logger.info(s"JavaGatewayServer initialized")
+
+    Runtime.getRuntime().addShutdownHook(new Thread {
+      override def run(): Unit = {
+        gatewayServer.shutdown()
+      }
+    })
+
+    try {
+      createGatewayPortFile(gatewayServer.getListeningPort)
+    } catch {
+      case NonFatal(e) =>
+        throw new Exception("Could not create java gateway port file", e)
+    }
+  }
+
+
+
+
   private[bigdl] def localMode: Boolean = {
     System.getProperty("bigdl.localMode", "false").toLowerCase(Locale.ROOT) match {
       case "true" => true
@@ -120,10 +206,10 @@ object Engine {
 
   private val NOT_INIT_ERROR =
     "Do you call Engine.init? See more at " +
-      "https://github.com/intel-analytics/BigDL/wiki/Programming-Guide#engine"
+      "https://bigdl-project.github.io/master/#APIGuide/Engine/"
 
   private val SPARK_CONF_ERROR = "For details please check " +
-    "https://github.com/intel-analytics/BigDL/wiki/Programming-Guide#engine"
+    "https://bigdl-project.github.io/master/#APIGuide/Engine/"
 
   /**
    * Notice: Please use property bigdl.engineType to set engineType.
@@ -132,7 +218,20 @@ object Engine {
   private var engineType: EngineType = {
     System.getProperty("bigdl.engineType", "mklblas").toLowerCase(Locale.ROOT) match {
       case "mklblas" => MklBlas
+      case "mkldnn" => MklDnn
       case engineType => throw new IllegalArgumentException(s"Unknown engine type $engineType")
+    }
+  }
+
+  /**
+   * Notice: Please use property bigdl.optimizerVersion to set optimizerVersion.
+   * Default version is OptimizerV1
+   */
+  private var optimizerVersion: OptimizerVersion = {
+    System.getProperty("bigdl.optimizerVersion", "optimizerv1").toLowerCase(Locale.ROOT) match {
+      case "optimizerv1" => OptimizerV1
+      case "optimizerv2" => OptimizerV2
+      case optimizerVersion => throw new IllegalArgumentException(s"Unknown type $optimizerVersion")
     }
   }
 
@@ -140,7 +239,27 @@ object Engine {
   @volatile private var _default: ThreadPool = null
 
   // Thread pool for layer use
-  @volatile private var _model: ThreadPool = new ThreadPool(1).setMKLThread(MKL.getMklNumThreads)
+  @volatile private var _model: ThreadPool = new ThreadPool(1)
+
+  // Thread pool for blas wrapper layer
+  private[bigdl] var wrapperComputing: ThreadPool = null
+
+  // This thread is mainly for mkldnn library.
+  // Because if we use the parent thread directly, there will be two bugs,
+  //   1. The child threads forked from parent thread will be bound to core 0
+  //      because of the affinity settings.
+  //   2. The native thread has some unknown thread local variables. So if
+  //      the parent thread exits and is recreated, such as the thread from
+  //      Executors.newFixedThreadPool. The whole app will be segment fault.
+  // The parent thread means the main thread (Local Mode) or worker thread of
+  // `mapPartition` (Distributed Mode).
+  // --------------------------------------------------------------------------
+  // We will only use the `threadPool` in ThreadPool, which is a ExecutorService.
+  // For `context` in ThreadPool, it is the called thread when poolSize is 1.
+  // So many usages of that thread, we will not change it for now.
+  val dnnComputing: ThreadPool = new ThreadPool(1)
+  // We need to init dnn thread in case that users directly call model operation in java local
+  initDnnThread()
 
   /**
    * If user undefine the property bigdl.coreNumber, it will return physical core number
@@ -154,9 +273,11 @@ object Engine {
   }
 
   private def getNumMachineCores: Int = {
+    val coreNum = Runtime.getRuntime().availableProcessors()
+    require(coreNum > 0, "Get a non-positive core number")
     // We assume the HT is enabled
-    // Todo: check the Hyper threading
-    Runtime.getRuntime().availableProcessors() / 2
+    // TODO: check the Hyper threading
+    if (coreNum > 1) coreNum / 2 else 1
   }
 
   /**
@@ -216,6 +337,19 @@ object Engine {
   /**
    * This method should only be used for test purpose.
    *
+   * @param optimizerVersion
+   */
+  private[bigdl] def setOptimizerVersion(optimizerVersion : OptimizerVersion): Unit = {
+    this.optimizerVersion = optimizerVersion
+  }
+
+  private[bigdl] def getOptimizerVersion(): OptimizerVersion = {
+    this.optimizerVersion
+  }
+
+  /**
+   * This method should only be used for test purpose.
+   *
    * @param engineType
    */
   private[bigdl] def setEngineType(engineType: EngineType): Unit = {
@@ -224,6 +358,13 @@ object Engine {
 
   private[bigdl] def getEngineType(): EngineType = {
     this.engineType
+  }
+
+  private[bigdl] def isMultiModels: Boolean = {
+    getEngineType() match {
+      case MklBlas => true
+      case MklDnn => System.getProperty("bigdl.multiModels", "false").toBoolean
+    }
   }
 
   private[bigdl] def model: ThreadPool = {
@@ -244,16 +385,30 @@ object Engine {
     if(_default == null || _default.getPoolSize != defaultPoolSize) {
       _default = new ThreadPool(defaultPoolSize)
     }
-
-    val modelPoolSize: Int = if (engineType == MklBlas) {
-      1
-    } else {
-      core
+    if (wrapperComputing == null || wrapperComputing.getPoolSize != defaultPoolSize) {
+      wrapperComputing = new ThreadPool(defaultPoolSize)
     }
+
+    // for dnn model we should set the pool size to 1 also.
+    // otherwise, it will downgrade the performance and
+    // FIXME make the loss to NaN.
+    val modelPoolSize = 1
 
     if(_model == null || _model.getPoolSize != modelPoolSize) {
       _model = new ThreadPool(modelPoolSize)
-      _model.setMKLThread(MKL.getMklNumThreads)
+    }
+    _model.setMKLThread(MKL.getMklNumThreads)
+
+    // do two things, set number of threads for omp thread pool and set the affinity
+    // only effects the `threadPool` and `computing.invoke/invokeAndWait` will not
+    // be effected. And affinity will not effect the other threads except
+    // this thread and the omp threads forked from computing.
+    if (engineType == MklDnn) {
+      dnnComputing.setMKLThreadOfMklDnnBackend(MKL.getMklNumThreads)
+      _model.setMKLThreadOfMklDnnBackend(MKL.getMklNumThreads)
+    }
+    if (System.getProperty("multiThread", "false").toBoolean) {
+      wrapperComputing.setMKLThread(1)
     }
   }
 
@@ -342,7 +497,17 @@ object Engine {
    * @return (nExecutor, executorCore)
    */
   private[utils] def sparkExecutorAndCore(): Option[(Int, Int)] = {
-    parseExecutorAndCore(SparkContext.getOrCreate().getConf)
+    try {
+      parseExecutorAndCore(SparkContext.getOrCreate().getConf)
+    } catch {
+      case s: SparkException =>
+        if (s.getMessage.contains("A master URL must be set in your configuration")) {
+          throw new IllegalArgumentException("A master URL must be set in your configuration." +
+            " Or if you want to run BigDL in a local JVM environment, you should set Java " +
+            "property bigdl.localMode=true")
+        }
+        throw s
+    }
   }
 
   /**
@@ -412,8 +577,57 @@ object Engine {
         total / core
       }
       Some(nodeNum, core)
+    } else if (master.toLowerCase.startsWith("k8s")) {
+      // Spark-on-kubernetes mode
+      val coreString = conf.get("spark.executor.cores", null)
+      val maxString = conf.get("spark.cores.max", null)
+      require(coreString != null, "Engine.init: Can't find executor core number" +
+        ", do you submit with --conf spark.executor.cores option")
+      require(maxString != null, "Engine.init: Can't find total core number" +
+        ". Do you submit with --conf spark.cores.max option")
+      val core = coreString.toInt
+      val nodeNum = dynamicAllocationExecutor(conf).getOrElse {
+        val total = maxString.toInt
+        require(total >= core && total % core == 0, s"Engine.init: total core " +
+          s"number($total) can't be divided " +
+          s"by single core number($core) provided to spark-submit")
+        total / core
+      }
+      Some(nodeNum, core)
     } else {
       throw new IllegalArgumentException(s"Engine.init: Unsupported master format $master")
+    }
+  }
+
+  private def setMklDnnEnvironments(): Unit = {
+    import com.intel.analytics.bigdl.mkl.hardware.CpuInfo
+    val affinityCores = Affinity.getAffinity
+    val physicalCoreNum = CpuInfo.getPhysicalProcessorCount
+    val affinityCoreNum = affinityCores.length
+
+    // 1. this library in docker/cgroup env, which sets cpu affinity fist. so we can't use
+    //    resources exceeding limits.
+    // 2. this library is in a hyper threading envs, so we should set the mkl num threads
+    //    to physical core number for performance
+
+    val default = if (affinityCores.min > 0 && affinityCores.max >= physicalCoreNumber) {
+      affinityCoreNum
+    } else if (physicalCoreNum > affinityCoreNum ) {
+      affinityCoreNum
+    } else {
+      physicalCoreNum
+    }
+
+    val threadsNumber = System.getProperty("bigdl.mklNumThreads", default.toString)
+    System.setProperty("bigdl.mklNumThreads", s"$threadsNumber")
+
+    System.setProperty("bigdl.disable.mklBlockTime", "true")
+    System.setProperty("bigdl.coreNumber", "1")
+  }
+
+  private def initDnnThread(): Unit = {
+    if (engineType == MklDnn) {
+      dnnComputing.setMKLThreadOfMklDnnBackend(MKL.getMklNumThreads)
     }
   }
 }

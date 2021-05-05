@@ -21,7 +21,6 @@ import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 
 import scala.reflect.ClassTag
-import scala.collection.mutable.ArrayBuffer
 
 /**
  * Sequential provides a means to plug layers together
@@ -30,7 +29,8 @@ import scala.collection.mutable.ArrayBuffer
 
 @SerialVersionUID(5375403296928513267L)
 class Sequential[T: ClassTag]
-(implicit ev: TensorNumeric[T]) extends Container[Activity, Activity, T] {
+(implicit ev: TensorNumeric[T])
+  extends DynamicContainer[Activity, Activity, T] with MklInt8Convertible {
 
   override def updateOutput(input: Activity): Activity = {
     var i = 0
@@ -76,6 +76,7 @@ class Sequential[T: ClassTag]
   }
 
   override def backward(input: Activity, nextError: Activity): Activity = {
+    val before = System.nanoTime()
     var i = modules.length - 1
     var error = nextError.asInstanceOf[Activity]
     while (i > 0) {
@@ -86,6 +87,7 @@ class Sequential[T: ClassTag]
     error = modules(0).backward(input, error)
 
     this.gradInput = error
+    backwardTime += System.nanoTime() - before
     gradInput
   }
 

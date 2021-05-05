@@ -20,7 +20,9 @@ import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity, Tensor
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.{NumericWildcard, TensorNumeric}
 import com.intel.analytics.bigdl.utils.serializer._
-import serialization.Bigdl.{AttrValue, BigDLModule}
+import com.intel.analytics.bigdl.utils.serializer.converters.DataConverter
+import com.intel.analytics.bigdl.serialization.Bigdl.{AttrValue, BigDLModule}
+import com.intel.analytics.bigdl.utils.Shape
 
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe
@@ -64,6 +66,18 @@ class Transpose[T: ClassTag](
     gradInput.resizeAs(buffer).asInstanceOf[Tensor[NumericWildcard]]
       .copy(buffer.asInstanceOf[Tensor[NumericWildcard]])
     gradInput
+  }
+
+  override def computeOutputShape(inputShape: Shape): Shape = {
+    val inputSize = inputShape.toSingle().toArray
+    var i = 0
+    while (i < permutations.length) {
+      val tmp = inputSize(permutations(i)._1 - 1)
+      inputSize(permutations(i)._1 - 1) = inputSize(permutations(i)._2 - 1)
+      inputSize(permutations(i)._2 - 1) = tmp
+      i += 1
+    }
+    Shape(inputSize)
   }
 
   override def toString(): String = {
@@ -124,7 +138,7 @@ object Transpose extends ModuleSerializable {
     while (i < size) {
       val nextPermutationBuilder = AttrValue.newBuilder
       val arr : Array[Int] = Array(transpose.permutations(i)._1,
-        transpose.permutations(i)_2)
+        transpose.permutations(i)._2)
       DataConverter.setAttributeValue(context, nextPermutationBuilder,
         arr, universe.typeOf[Array[Int]])
       transposeBuilder.putAttr(s"permutation_$i", nextPermutationBuilder.build)

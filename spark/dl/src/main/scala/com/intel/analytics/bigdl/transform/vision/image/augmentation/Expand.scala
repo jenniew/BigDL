@@ -65,7 +65,9 @@ class Expand(meansR: Int = 123, meansG: Int = 117, meansB: Int = 104,
     channels.get(1).setTo(new Scalar(meansG))
     channels.get(2).setTo(new Scalar(meansR))
     Core.merge(channels, output)
-    input.copyTo(output.submat(bboxRoi))
+    val submat = output.submat(bboxRoi)
+    input.copyTo(submat)
+    submat.release()
     // release memory
     (0 to 2).foreach(channels.get(_).release())
     expandBbox
@@ -89,6 +91,46 @@ object Expand {
   def apply(meansR: Int = 123, meansG: Int = 117, meansB: Int = 104,
     minExpandRatio: Double = 1.0, maxExpandRatio: Double = 4.0): Expand =
     new Expand(meansR, meansG, meansB, minExpandRatio, maxExpandRatio)
+}
+
+/**
+ * expand image with given expandHeight and expandWidth,
+ * put the original image to the center of expanded image
+ * @param expandHeight height expand to
+ * @param expandWidth width expand to
+ */
+class FixExpand(expandHeight: Int, expandWidth: Int) extends FeatureTransformer {
+  override def transformMat(feature: ImageFeature): Unit = {
+    val input = feature.opencvMat()
+    var output: OpenCVMat = null
+    try {
+      val width = input.width()
+      val height = input.height()
+      require(width <= expandWidth,
+        s"width ${width} of input mat is not <= expandWidth $expandWidth")
+      output = new OpenCVMat()
+      // Get new height and width
+      val topPad = ((expandHeight - input.height()) / 2).floor
+      val leftPad = ((expandWidth - input.width()) / 2).floor
+      val bboxRoi = new Rect(leftPad.toInt, topPad.toInt, width, height)
+      output.create(expandHeight, expandWidth, input.`type`())
+      val submat = output.submat(bboxRoi)
+      input.copyTo(submat)
+      submat.release()
+      output.copyTo(input)
+      feature(ImageFeature.boundingBox) =
+        BoundingBox(leftPad, topPad, leftPad + width, topPad + height)
+    } finally {
+      if (null != output) {
+        output.release()
+      }
+    }
+  }
+}
+
+object FixExpand {
+  def apply(expandHeight: Int, expandWidth: Int): FixExpand =
+    new FixExpand(expandHeight, expandWidth)
 }
 
 

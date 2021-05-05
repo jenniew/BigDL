@@ -16,8 +16,11 @@
 package com.intel.analytics.bigdl.nn
 
 import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.utils.T
+import com.intel.analytics.bigdl.utils.{T, Table}
+import com.intel.analytics.bigdl.utils.serializer.ModuleSerializationTest
 import org.scalatest.{FlatSpec, Matchers}
+
+import scala.util.Random
 
 @com.intel.analytics.bigdl.tags.Parallel
 class CAddTableSpec extends FlatSpec with Matchers {
@@ -39,5 +42,39 @@ class CAddTableSpec extends FlatSpec with Matchers {
     val grads = module.backward(T(tensor, scalar), Tensor[Float](T(1, 2, 3)))
     grads[Tensor[Float]](1) should be(Tensor[Float](T(1, 2, 3)))
     grads[Tensor[Float]](2).value() should be(6)
+  }
+
+  "CAddTable with different size" should "be correct" in {
+    val input1 = Tensor[Float](T(T(-0.52817175, -1.07296862, 0.86540763, -2.3015387,
+      1.74481176, -0.7612069, 0.3190391, -0.24937038),
+      T( 1.46210794, -2.06014071, -0.3224172, -0.38405435, 1.13376944, -1.09989127,
+        -0.17242821, -0.87785842)))
+    val input2 = Tensor[Float](T(T(1.62434536), T(-0.61175641)))
+    val input3 = Tensor[Float](T(T(1.62434536, 1.62434536, 1.62434536, 1.62434536,
+      1.62434536, 1.62434536, 1.62434536, 1.62434536),
+      T(-0.61175641, -0.61175641, -0.61175641, -0.61175641, -0.61175641,
+        -0.61175641, -0.61175641, -0.61175641)))
+    val layer = CAddTable[Float]()
+    val output = layer.forward(T(input1, input2))
+    val output2 = layer.forward(T(input1, input3))
+    output should be(output2)
+
+    val gradInput = layer.backward(T(input1, input2), output)
+    val gradInput2 = layer.backward(T(input1, input3), output2)
+
+    gradInput[Tensor[Float]](1) should be(gradInput2[Tensor[Float]](1))
+    gradInput[Tensor[Float]](2) should be(gradInput2[Tensor[Float]](2))
+  }
+}
+
+class CAddTableSerialTest extends ModuleSerializationTest {
+  override def test(): Unit = {
+    val input1 = Tensor[Float](5, 5).apply1(e => Random.nextFloat())
+    val input2 = Tensor[Float](5, 5).apply1(e => Random.nextFloat())
+    var input = new Table()
+    input(1.toFloat) = input1
+    input(2.toFloat) = input2
+    val caddTable = CAddTable[Float](false).setName("caddTable")
+    runSerializationTest(caddTable, input)
   }
 }

@@ -1,5 +1,3 @@
-# Tensorflow Support
-
 BigDL supports loading and saving tensorflow models.
 This page will give you a basic introduction of this feature. For more
 interesting and sophisticated examples, please checkout [here](https://github.com/intel-analytics/BigDL/tree/master/spark/dl/src/main/scala/com/intel/analytics/bigdl/example/tensorflow).
@@ -8,9 +6,25 @@ interesting and sophisticated examples, please checkout [here](https://github.co
 
 BigDL supports loading tensorflow model with only a few lines of code.
 
+If we already have a freezed graph protobuf file, we can use the `loadTF` api directly to
+load the tensorflow model. 
+
+Otherwise, we should first use the `export_tf_checkpoint.py` script provided by BigDL's distribution
+package, or the `dump_model` function defined in [here](https://github.com/intel-analytics/BigDL/blob/master/pyspark/bigdl/util/tf_utils.py) to
+generate the model definition file (`model.pb`) and variable binary file (`model.bin`). 
+
+
 ### Generate model definition file and variable binary file
 
-**Python**
+
+**Use Script**
+```shell
+CKPT_FILE_PREFIX=/tmp/tensorflow/model.ckpt
+SAVE_PATH=/tmp/model/
+python export_tf_checkpoint.py $CKPT_FILE_PREFIX $SAVE_PATH
+```
+
+**Use python function**
 ```python
 import tensorflow as tf
 
@@ -124,3 +138,6 @@ output = tf.nn.tanh(middle)
 # construct BigDL model and get the result form 
 bigdl_model = Model(input, output, model_type="tensorflow")
 ```
+
+## **Supported Operations**
+Please check this [page](../APIGuide/tensorflow_ops_list.md)

@@ -75,6 +75,8 @@ class Table private[bigdl](
 
   def foreach[U](f: ((Any, Any)) => U): Unit = state.foreach(f)
 
+  def map[U](func: ((Any, Any)) => U): Iterable[U] = state.map(func)
+
   def get[T](key: Any): Option[T] = {
     state.get(key).map(_.asInstanceOf[T])
   }
@@ -113,7 +115,7 @@ class Table private[bigdl](
   }
 
   override def toString: String = {
-    s" {\n\t${state.map{case (key: Any, value: Any) =>
+    s" {\n\t${state.filter(_._2 != null).map{case (key: Any, value: Any) =>
       s"$key: " + s"$value".split("\n").mkString(s"\n\t${key.toString.replaceAll(".", " ")}  ")
     }.mkString("\n\t")}\n }"
   }
@@ -133,7 +135,10 @@ class Table private[bigdl](
       return false
     }
     this.state.keys.foreach(key => {
-      if (this.state(key) != other.state(key)) {
+      if (this.state(key).isInstanceOf[Array[_]] && other.state(key).isInstanceOf[Array[_]]) {
+        return (this.state(key).asInstanceOf[Array[_]].deep ==
+          other.state(key).asInstanceOf[Array[_]].deep)
+      } else if (this.state(key) != other.state(key)) {
         return false
       }
     })
@@ -293,12 +298,12 @@ class Table private[bigdl](
    * Return the elements of this table as a Seq.
    * This method assumes the key of this table are all
    * the integers between 1 to this.length(),
-   * the values are all Tensor[T]
+   * the values are all D
    */
-  def toSeq[T]: Seq[Tensor[T]] = {
+  def toSeq[D]: Seq[D] = {
     for (i <- 0 until this.length()) yield {
       try {
-        this(i + 1).asInstanceOf[Tensor[T]]
+        this(i + 1).asInstanceOf[D]
       } catch {
         case e: NoSuchElementException =>
           throw new UnsupportedOperationException("toSeq requires the key of this table are" +

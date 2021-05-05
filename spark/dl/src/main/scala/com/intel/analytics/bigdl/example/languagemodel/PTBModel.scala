@@ -17,11 +17,30 @@
 package com.intel.analytics.bigdl.example.languagemodel
 
 import com.intel.analytics.bigdl.Module
+import com.intel.analytics.bigdl.mkl.Memory
 import com.intel.analytics.bigdl.nn.Graph._
 import com.intel.analytics.bigdl.nn.{TimeDistributed, _}
+import com.intel.analytics.bigdl.utils.{Engine, MklDnn}
 
 object PTBModel {
-  def apply(
+  def transformer(
+     inputSize: Int = 10000,
+     hiddenSize: Int = 256,
+     outputSize: Int = 10000,
+     numLayers: Int = 2,
+     keepProb: Float = 2.0f)
+  : Module[Float] = {
+    val input = Input[Float]()
+    val transformer = Transformer[Float](vocabSize = inputSize,
+      hiddenSize = hiddenSize, numHeads = 4, filterSize = hiddenSize*4,
+      numHiddenlayers = numLayers, embeddingDropout = 1- keepProb,
+      attentionDropout = 0.1f, ffnDropout = 0.1f).inputs(input)
+    val linear = Linear[Float](hiddenSize, outputSize)
+    val output = TimeDistributed[Float](linear).inputs(transformer)
+    Graph(input, output)
+  }
+
+  def lstm(
     inputSize: Int,
     hiddenSize: Int,
     outputSize: Int,
@@ -39,7 +58,11 @@ object PTBModel {
     val linear = Linear[Float](hiddenSize, outputSize)
     val output = TimeDistributed[Float](linear).inputs(lstm)
 
-    Graph(input, output)
+    val model = Graph(input, output)
+    model.asInstanceOf[StaticGraph[Float]].setInputFormats(Seq(Memory.Format.nc))
+    model.asInstanceOf[StaticGraph[Float]].setOutputFormats(Seq(Memory.Format.ntc))
+    if (Engine.getEngineType() == MklDnn) model.asInstanceOf[StaticGraph[Float]].toIRgraph()
+    else model
   }
 
   private def addLayer(inputSize: Int,

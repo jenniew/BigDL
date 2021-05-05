@@ -27,6 +27,9 @@ import tempfile
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 from bigdl.util.engine import compare_version
+from bigdl.transform.vision.image import *
+from bigdl.models.utils.model_broadcast import broadcast_model
+from bigdl.dataset.dataset import *
 np.random.seed(1337)  # for reproducibility
 
 
@@ -70,7 +73,55 @@ class TestSimple():
         print(cadd.get_weights()[0])
         assert_allclose(cadd.get_weights()[0],
                         np.array([1, 2, 3, 4, 5]).reshape((5, 1)),
+
                         rtol=1.e-1)
+
+    def test_load_keras_model_of(self):
+        from bigdl.nn.keras.topology import Model as KModel
+        from bigdl.nn.keras.layer import Input as KInput
+        from bigdl.nn.keras.layer import Dense
+
+        input = KInput(shape=[2, 3])
+        fc1 = Dense(2)(input)
+        model = KModel(input, fc1)
+        tmp_path = tempfile.mktemp()
+        model.save(tmp_path, True)
+        model_loaded = KModel.load(tmp_path)
+        assert "bigdl.nn.keras.topology.Model" in str(type(model_loaded))
+        assert len(model_loaded.layers) == 2
+
+    def test_load_keras_seq_of(self):
+        from bigdl.nn.keras.topology import Sequential as KSequential
+        from bigdl.nn.keras.layer import Dense
+
+        model = KSequential()
+        fc1 = Dense(2, input_shape=[2, 3])
+        model.add(fc1)
+        tmp_path = tempfile.mktemp()
+        model.save(tmp_path, True)
+        model_loaded = KSequential.load(tmp_path)
+        assert "bigdl.nn.keras.topology.Sequential" in str(type(model_loaded))
+        assert len(model_loaded.layers) == 1
+
+    def test_load_model_of(self):
+        input = Input()
+        fc1 = Linear(4, 2)(input)
+        model = Model(input, fc1)
+        tmp_path = tempfile.mktemp()
+        model.save(tmp_path, True)
+        model_loaded = Model.load(tmp_path)
+        assert "Model" in str(type(model_loaded))
+        assert len(model_loaded.layers) == 2
+
+    def test_load_sequential_of(self):
+        fc1 = Linear(4, 2)
+        model = Sequential()
+        model.add(fc1)
+        tmp_path = tempfile.mktemp()
+        model.save(tmp_path, True)
+        model_loaded = Model.load(tmp_path)
+        assert "Sequential" in str(type(model_loaded))
+        assert len(model_loaded.layers) == 1
 
     def test_load_model(self):
         fc1 = Linear(4, 2)
@@ -85,7 +136,7 @@ class TestSimple():
         fc1 = Linear(4, 2)
         fc1.set_weights([np.ones((4, 2)), np.ones((2,))])
         tmp_path = tempfile.mktemp()
-        fc1.saveModel(tmp_path, True)
+        fc1.saveModel(tmp_path, None, True)
         fc1_loaded = Model.loadModel(tmp_path)
         assert_allclose(fc1_loaded.get_weights()[0],
                         fc1.get_weights()[0])
@@ -160,6 +211,16 @@ class TestSimple():
         assert_allclose(gradInput[1],
                         np.array([6.0, 6.0, 6.0, 6.0]))
 
+    def test_get_node(self):
+        fc1 = Linear(4, 2)()
+        fc2 = Linear(4, 2)()
+        fc1.element().set_name("fc1")
+        cadd = CAddTable()([fc1, fc2])
+        output1 = ReLU()(cadd)
+        model = Model([fc1, fc2], [output1])
+        res = model.node("fc1")
+        assert res.element().name() == "fc1"
+
     def test_save_graph_topology(self):
         fc1 = Linear(4, 2)()
         fc2 = Linear(4, 2)()
@@ -168,6 +229,19 @@ class TestSimple():
         output2 = Threshold(10.0)(cadd)
         model = Model([fc1, fc2], [output1, output2])
         model.save_graph_topology(tempfile.mkdtemp())
+
+    def test_graph_preprocessor(self):
+        fc1 = Linear(4, 2)()
+        fc2 = Linear(4, 2)()
+        cadd = CAddTable()([fc1, fc2])
+        preprocessor = Model([fc1, fc2], [cadd])
+        relu = ReLU()()
+        fc3 = Linear(2, 1)(relu)
+        trainable = Model([relu], [fc3])
+        model = Model(preprocessor, trainable)
+        model.forward([np.array([0.1, 0.2, -0.3, -0.4]), np.array([0.5, 0.4, -0.2, -0.1])])
+        model.backward([np.array([0.1, 0.2, -0.3, -0.4]), np.array([0.5, 0.4, -0.2, -0.1])],
+                       np.array([1.0]))
 
     def test_load_zip_conf(self):
         from bigdl.util.common import get_bigdl_conf
@@ -222,9 +296,9 @@ class TestSimple():
         optim_method = SGD(learningrate=0.01, learningrate_decay=0.0002, weightdecay=0.0,
                            momentum=0.0, dampening=0.0, nesterov=False,
                            leaningrate_schedule=Poly(0.5, int((data_len / batch_size) * epoch_num)))
-        optimizer = Optimizer(
+        optimizer = Optimizer.create(
             model=model_test,
-            training_rdd=trainingData,
+            training_set=trainingData,
             criterion=MSECriterion(),
             optim_method=optim_method,
             end_trigger=MaxEpoch(epoch_num),
@@ -248,6 +322,7 @@ class TestSimple():
                                         app_name="run1")
         optimizer.set_train_summary(train_summary)
         optimizer.set_val_summary(val_summary)
+        optimizer.set_end_when(MaxEpoch(epoch_num * 2))
 
         trained_model = optimizer.optimize()
         lr_result = train_summary.read_scalar("LearningRate")
@@ -298,9 +373,9 @@ class TestSimple():
         optim_method = SGD(learningrate=0.01, learningrate_decay=0.0002, weightdecay=0.0,
                            momentum=0.0, dampening=0.0, nesterov=False,
                            leaningrate_schedule=Poly(0.5, int((data_len / batch_size) * epoch_num)))
-        optimizer = Optimizer(
+        optimizer = Optimizer.create(
             model=model_test,
-            training_rdd=trainingData,
+            training_set=trainingData,
             criterion=MSECriterion(),
             optim_method=optim_method,
             end_trigger=MaxEpoch(epoch_num),
@@ -312,6 +387,36 @@ class TestSimple():
             val_method=[Top1Accuracy()]
         )
 
+        optimizer.optimize()
+
+    def test_table_label(self):
+        """
+        Test for table as label in Sample.
+        For test purpose only.
+        """
+        def gen_rand_sample():
+            features1 = np.random.uniform(0, 1, 3)
+            features2 = np.random.uniform(0, 1, 3)
+            label = np.array((2 * (features1 + features2)).sum() + 0.4)
+            return Sample.from_ndarray([features1, features2], [label, label])
+
+        training_data = self.sc.parallelize(range(0, 50)).map(
+            lambda i: gen_rand_sample())
+
+        model_test = Sequential()
+        branches = ParallelTable()
+        branch1 = Sequential().add(Linear(3, 1)).add(Tanh())
+        branch2 = Sequential().add(Linear(3, 1)).add(ReLU())
+        branches.add(branch1).add(branch2)
+        model_test.add(branches)
+
+        optimizer = Optimizer.create(
+            model=model_test,
+            training_set=training_data,
+            criterion=MarginRankingCriterion(),
+            optim_method=SGD(),
+            end_trigger=MaxEpoch(5),
+            batch_size=32)
         optimizer.optimize()
 
     def test_forward_backward(self):
@@ -431,10 +536,50 @@ class TestSimple():
                                  [-0.5906958], [-0.12307882], [-0.77907401]], dtype="float32")
         for i in range(0, total_length):
             assert_allclose(p[i], ground_label[i], atol=1e-6, rtol=0)
+
+        predict_result_with_batch = model.predict(features=predict_data,
+                                                  batch_size=4)
+        p_with_batch = predict_result_with_batch.take(6)
+        for i in range(0, total_length):
+            assert_allclose(p_with_batch[i], ground_label[i], atol=1e-6, rtol=0)
+
         predict_class = model.predict_class(predict_data)
         predict_labels = predict_class.take(6)
         for i in range(0, total_length):
             assert predict_labels[i] == 1
+
+    def test_predict_image(self):
+        resource_path = os.path.join(os.path.split(__file__)[0], "resources")
+        image_path = os.path.join(resource_path, "pascal/000025.jpg")
+        image_frame = ImageFrame.read(image_path, self.sc)
+        transformer = Pipeline([Resize(256, 256), CenterCrop(224, 224),
+                                ChannelNormalize(0.485, 0.456, 0.406, 0.229, 0.224, 0.225),
+                                MatToTensor(), ImageFrameToSample()])
+        image_frame.transform(transformer)
+
+        model = Sequential()
+        model.add(SpatialConvolution(3, 6, 5, 5))
+        model.add(Tanh())
+
+        image_frame = model.predict_image(image_frame)
+        predicts = image_frame.get_predict()
+        predicts.collect()
+
+    def test_predict_image_local(self):
+        resource_path = os.path.join(os.path.split(__file__)[0], "resources")
+        image_path = os.path.join(resource_path, "pascal/000025.jpg")
+        image_frame = ImageFrame.read(image_path)
+        transformer = Pipeline([Resize(256, 256), CenterCrop(224, 224),
+                                ChannelNormalize(0.485, 0.456, 0.406, 0.229, 0.224, 0.225),
+                                MatToTensor(), ImageFrameToSample()])
+        image_frame.transform(transformer)
+
+        model = Sequential()
+        model.add(SpatialConvolution(3, 6, 5, 5))
+        model.add(Tanh())
+
+        image_frame = model.predict_image(image_frame)
+        predicts = image_frame.get_predict()
 
     def test_rng(self):
         rng = RNG()
@@ -458,7 +603,7 @@ class TestSimple():
         tensors["tensor1"] = JTensor.from_ndarray(np.random.rand(3, 2))
         tensors["tensor2"] = JTensor.from_ndarray(np.random.rand(3, 2))
         # in old impl, this will throw an exception
-        _py2java(self.sc, tensors)
+        _py2java(self.sc._gateway, tensors)
 
     def test_compare_version(self):
         assert compare_version("2.1.1", "2.2.0") == -1
@@ -480,14 +625,14 @@ class TestSimple():
         l1 = Linear(feature_num, 1)
         model.add(l1)
 
-        localOptimizer = LocalOptimizer(
+        localOptimizer = Optimizer.create(
             model=model,
-            X=X_,
-            y=y_,
+            training_set=(X_, y_),
             criterion=MSECriterion(),
             optim_method=SGD(learningrate=1e-2),
             end_trigger=MaxEpoch(epoch_num),
             batch_size=batch_size)
+
         trained_model = localOptimizer.optimize()
         trained_model = model
         w = trained_model.get_weights()
@@ -506,7 +651,7 @@ class TestSimple():
         model.add(l1)
         model.add(Sigmoid())
         model.set_seed(1234).reset()
-        predict_result = model.predict_local_class(X_)
+        predict_result = model.predict_class(X_)
         assert_array_equal(predict_result, np.ones([3]))
 
     def test_local_predict_multiple_input(self):
@@ -516,15 +661,97 @@ class TestSimple():
         model = Model(inputs=[l1, l2], outputs=joinTable)
         result = model.predict_local([np.ones([4, 3]), np.ones([4, 3])])
         assert result.shape == (4, 5)
-        result2 = model.predict_local_class([np.ones([4, 3]), np.ones([4, 3])])
+        result2 = model.predict_class([np.ones([4, 3]), np.ones([4, 3])])
         assert result2.shape == (4,)
 
         result3 = model.predict_local([JTensor.from_ndarray(np.ones([4, 3])),
                                        JTensor.from_ndarray(np.ones([4, 3]))])
         assert result3.shape == (4, 5)
-        result4 = model.predict_local_class([JTensor.from_ndarray(np.ones([4, 3])),
-                                             JTensor.from_ndarray(np.ones([4, 3]))])
+        result4 = model.predict_class([JTensor.from_ndarray(np.ones([4, 3])),
+                                       JTensor.from_ndarray(np.ones([4, 3]))])
         assert result4.shape == (4,)
+        result5 = model.predict_local([JTensor.from_ndarray(np.ones([4, 3])),
+                                       JTensor.from_ndarray(np.ones([4, 3]))], batch_size=2)
+        assert result5.shape == (4, 5)
+
+    def test_model_broadcast(self):
+
+        init_executor_gateway(self.sc)
+        model = Linear(3, 2)
+        broadcasted = broadcast_model(self.sc, model)
+        input_data = np.random.rand(3)
+        output = self.sc.parallelize([input_data], 1) \
+            .map(lambda x: broadcasted.value.forward(x)).first()
+        expected = model.forward(input_data)
+
+        assert_allclose(output, expected)
+
+    def test_train_DataSet(self):
+        batch_size = 8
+        epoch_num = 5
+        images = []
+        labels = []
+        for i in range(0, 8):
+            features = np.random.uniform(0, 1, (200, 200, 3))
+            label = np.array([2])
+            images.append(features)
+            labels.append(label)
+
+        image_frame = DistributedImageFrame(self.sc.parallelize(images),
+                                            self.sc.parallelize(labels))
+
+        transformer = Pipeline([BytesToMat(), Resize(256, 256), CenterCrop(224, 224),
+                                ChannelNormalize(0.485, 0.456, 0.406, 0.229, 0.224, 0.225),
+                                MatToTensor(), ImageFrameToSample(target_keys=['label'])])
+        data_set = DataSet.image_frame(image_frame).transform(transformer)
+
+        model = Sequential()
+        model.add(SpatialConvolution(3, 1, 5, 5))
+        model.add(View([1 * 220 * 220]))
+        model.add(Linear(1 * 220 * 220, 20))
+        model.add(LogSoftMax())
+        optim_method = SGD(learningrate=0.01)
+        optimizer = Optimizer.create(
+            model=model,
+            training_set=data_set,
+            criterion=ClassNLLCriterion(),
+            optim_method=optim_method,
+            end_trigger=MaxEpoch(epoch_num),
+            batch_size=batch_size)
+        optimizer.set_validation(
+            batch_size=batch_size,
+            val_rdd=data_set,
+            trigger=EveryEpoch(),
+            val_method=[Top1Accuracy()]
+        )
+
+        trained_model = optimizer.optimize()
+
+        predict_result = trained_model.predict_image(image_frame.transform(transformer))
+        assert_allclose(predict_result.get_predict().count(), 8)
+
+    def test_get_node_and_core_num(self):
+        node, core = get_node_and_core_number()
+
+        assert node == 1
+        assert core == 4
+
+    def tes_read_image_frame(self):
+        init_engine()
+        resource_path = os.path.join(os.path.split(__file__)[0], "resources")
+        image_path = os.path.join(resource_path, "pascal/000025.jpg")
+        image_frame = ImageFrame.read(image_path, self.sc)
+        count = image_frame.get_image().count()
+        assert count == 1
+
+    def test_set_input_output_format(self):
+        input1 = Input()
+        lstm1 = Recurrent().add(LSTM(128, 128))(input1)
+        fc1 = Linear(128, 10)
+        t1 = TimeDistributed(fc1)(lstm1)
+        model = Model(inputs=input1, outputs=t1)
+        model.set_input_formats([4])
+        model.set_output_formats([27])
 
 
 if __name__ == "__main__":

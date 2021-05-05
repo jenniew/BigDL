@@ -17,7 +17,7 @@
 package com.intel.analytics.bigdl.nn
 
 import com.intel.analytics.bigdl.nn.Graph.ModuleNode
-import com.intel.analytics.bigdl.nn.abstractnn.Activity
+import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.{T, Table}
@@ -34,7 +34,9 @@ import scala.reflect.ClassTag
  */
 @SerialVersionUID(- 704681653938468956L)
 class ConcatTable[T : ClassTag]
-  (implicit ev: TensorNumeric[T]) extends Container[Activity, Table, T] {
+  (implicit ev: TensorNumeric[T])
+  extends DynamicContainer[Activity, Table, T] with MklInt8Convertible {
+
   override def updateOutput(input: Activity): Table = {
     require(modules.length > 0, "empty modules of concat table")
     if (gradInput == null) {
@@ -158,6 +160,7 @@ class ConcatTable[T : ClassTag]
   }
 
   override def backward(input: Activity, gradOutput: Table): Activity = {
+    val before = System.nanoTime()
     require(modules.length > 0, "empty modules of concat table")
     val isInputTable = input.isInstanceOf[Table]
     val wasGradInputTable = gradInput.isInstanceOf[Table]
@@ -201,6 +204,7 @@ class ConcatTable[T : ClassTag]
         i += 1
       }
     }
+    backwardTime += System.nanoTime() - before
     gradInput
   }
 

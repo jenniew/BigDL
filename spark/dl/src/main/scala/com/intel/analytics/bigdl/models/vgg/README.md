@@ -7,7 +7,7 @@ You can download CIFAR-10 dataset from [this webpage](https://www.cs.toronto.edu
 
 ## Get the JAR
 You can build one by refer to the
-[Build Page](https://github.com/intel-analytics/BigDL/wiki/Build-Page) from the source code.
+[Build Page](https://bigdl-project.github.io/master/#ScalaUserGuide/install-build-src/) from the source code.
 
 ## Train Model on Spark
 Example command for running in Spark cluster mode
@@ -58,6 +58,7 @@ there are some files already exist in the folder, the old file will not be overw
 safety of your model files.
 * -b: The mini-batch size. It is expected that the mini-batch size is a multiple of node_number * core_number.
 * --summary: Where you store the training metainfo, which can be visualized in tensorboard
+* --optimizerVersion: option to set DistriOptimizer version, the value can be "optimizerV1" or "optimizerV2".
 ## Test Model
 Example command for running in Spark local mode
 ```

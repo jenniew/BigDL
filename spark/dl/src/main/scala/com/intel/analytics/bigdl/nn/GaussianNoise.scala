@@ -38,7 +38,7 @@ import scala.reflect.ClassTag
 @SerialVersionUID(- 2590701089601246637L)
 class GaussianNoise[T: ClassTag](
    val stddev: Double
-  )(implicit ev: TensorNumeric[T]) extends TensorModule[T]{
+  )(implicit ev: TensorNumeric[T]) extends TensorModule[T] {
 
 
   override def updateOutput(input: Tensor[T]): Tensor[T] = {

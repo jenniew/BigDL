@@ -16,36 +16,28 @@
 
 package com.intel.analytics.bigdl.dataset
 
-import java.io.File
+import java.io.{ByteArrayInputStream, File, FileInputStream}
 import java.nio.file.Paths
 import java.util.concurrent.{Callable, Executors}
-
 import com.intel.analytics.bigdl.dataset.image._
+import com.intel.analytics.bigdl.dataset.segmentation.{COCODataset, COCOPoly, COCORLE, PolyMasks, RLEMasks}
+import com.intel.analytics.bigdl.models.utils.COCOSeqFileGenerator
 import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator, TestUtils}
+import com.intel.analytics.bigdl.transform.vision.image.{ImageFeature, RoiImageInfo}
+import com.intel.analytics.bigdl.transform.vision.image.label.roi.RoiLabel
+import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator, SparkContextLifeCycle, TestUtils}
+import java.awt.image.DataBufferByte
+import javax.imageio.ImageIO
 import org.apache.hadoop.io.Text
 import org.apache.spark.{SparkConf, SparkContext}
 import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
-
 import scala.util.Random
 
 @com.intel.analytics.bigdl.tags.Serial
-class DataSetSpec extends FlatSpec with Matchers with BeforeAndAfter {
-  var sc: SparkContext = null
-  val nodeNumber = 1
-  val coreNumber = 1
-
-  before {
-    Engine.init(nodeNumber, coreNumber, true)
-    val conf = new SparkConf().setMaster("local[1]").setAppName("DataSetSpec")
-    sc = new SparkContext(conf)
-  }
-
-  after {
-    if (sc != null) {
-      sc.stop()
-    }
-  }
+class DataSetSpec extends SparkContextLifeCycle with Matchers {
+  override def nodeNumber: Int = 1
+  override def coreNumber: Int = 1
+  override def appName: String = "DataSetSpec"
 
   private def processPath(path: String): String = {
     if (path.contains(":")) {
@@ -54,6 +46,62 @@ class DataSetSpec extends FlatSpec with Matchers with BeforeAndAfter {
       path
     }
   }
+
+  "COCODataset" should "correctly transform into sequence file" in {
+    val resource = getClass().getClassLoader().getResource("coco")
+
+    // load data from JSON for comparision
+    val ds = COCODataset.load(processPath(resource.getPath())
+      + File.separator + "cocomini.json")
+    val index = ds.images.toIterator.map(im => (im.fileName, im)).toMap
+
+    val dataSetFolder = processPath(resource.getPath()) + File.separator
+    val tmpFile = java.io.File.createTempFile("UnitTest", System.nanoTime().toString)
+    require(tmpFile.delete())
+    require(tmpFile.mkdir())
+    COCOSeqFileGenerator.main(Array("-f", dataSetFolder, "-o", tmpFile.getPath, "-p", "4",
+      "-b", "2", "-m", dataSetFolder + "cocomini.json"))
+
+    // write done, now read and check
+    DataSet.SeqFileFolder.filesToRoiImageFeatures(tmpFile.getPath, sc).toDistributed()
+      .data(false)
+      .map(imf => {
+        (imf(ImageFeature.uri).asInstanceOf[String], imf.getOriginalSize, imf.getLabel[RoiLabel],
+          imf[Tensor[Float]](RoiImageInfo.ISCROWD), imf[Array[Byte]](ImageFeature.bytes))
+      })
+      .collect()
+      .foreach({ case (uri, size, label, iscrowd, bytes) =>
+        val img = index(uri)
+        require(size == (img.height, img.width, 3))
+        require(label.masks.length == img.annotations.length)
+        require(java.util.Arrays.equals(iscrowd.toArray(),
+          img.annotations.map(a => if (a.isCrowd) 1f else 0f).toArray))
+        img.annotations.zipWithIndex.foreach { case (ann, idx) =>
+          label.masks(idx) match {
+            case rle: RLEMasks =>
+              val realArr = ann.segmentation.asInstanceOf[COCORLE].counts
+              val seqArr = rle.counts
+              require(java.util.Arrays.equals(realArr, seqArr))
+            case poly: PolyMasks =>
+              val realArr = ann.segmentation.asInstanceOf[PolyMasks].poly.flatten
+              val seqArr = poly.poly.flatten
+              require(java.util.Arrays.equals(realArr, seqArr))
+          }
+
+          val bb = label.bboxes.narrow(1, idx + 1, 1).squeeze().toArray()
+          val annbb = Array(ann.bbox._1, ann.bbox._2,
+            ann.bbox._3, ann.bbox._4)
+          require(java.util.Arrays.equals(bb, annbb))
+        }
+
+        // label checking done, now check the image data
+        val inputStream = new FileInputStream(dataSetFolder + uri)
+        val image = ImageIO.read(inputStream)
+        val rawdata = image.getRaster.getDataBuffer.asInstanceOf[DataBufferByte].getData()
+        require(java.util.Arrays.equals(rawdata, bytes))
+      })
+  }
+
 
   "mnist data source" should "load image correct" in {
     val resource = getClass().getClassLoader().getResource("mnist")

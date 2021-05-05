@@ -76,12 +76,6 @@ class ImageFeature(JavaValue):
         self.value = callBigDlFunc(
             bigdl_type, JavaValue.jvm_class_constructor(self), image_tensor, label_tensor, path)
 
-    def to_sample(self, float_key="floats", to_chw=True, with_im_info=False):
-        """
-        ImageFeature to sample
-        """
-        return callBigDlFunc(self.bigdl_type, "imageFeatureToSample", self.value, float_key, to_chw, with_im_info)
-
     def get_image(self, float_key="floats", to_chw=True):
         """
         get image as ndarray from ImageFeature
@@ -118,7 +112,7 @@ class ImageFrame(JavaValue):
 
 
     @classmethod
-    def read(cls, path, sc=None, bigdl_type="float"):
+    def read(cls, path, sc=None, min_partitions=1, bigdl_type="float"):
         """
         Read images as Image Frame
         if sc is defined, Read image as DistributedImageFrame from local file system or HDFS
@@ -127,16 +121,24 @@ class ImageFrame(JavaValue):
         if sc is defined, path can be local or HDFS. Wildcard character are supported.
         if sc is null, path is local directory/image file/image file with wildcard character
         :param sc SparkContext
+        :param min_partitions A suggestion value of the minimal splitting number for input data.
         :return ImageFrame
         """
-        return ImageFrame(jvalue=callBigDlFunc(bigdl_type, "read", path, sc))
+        return ImageFrame(jvalue=callBigDlFunc(bigdl_type, "read", path, sc, min_partitions))
 
     @classmethod
-    def readParquet(cls, path, sql_context, bigdl_type="float"):
+    def read_parquet(cls, path, sc, bigdl_type="float"):
         """
         Read parquet file as DistributedImageFrame
         """
-        return DistributedImageFrame(jvalue=callBigDlFunc(bigdl_type, "readParquet", path, sql_context))
+        return DistributedImageFrame(jvalue=callBigDlFunc(bigdl_type, "readParquet", path, sc))
+
+    @classmethod
+    def write_parquet(cls, path, output, sc, partition_num = 1, bigdl_type="float"):
+        """
+        write ImageFrame as parquet file
+        """
+        return callBigDlFunc(bigdl_type, "writeParquet", path, output, sc, partition_num)
 
     def is_local(self):
         """
@@ -170,12 +172,39 @@ class ImageFrame(JavaValue):
         """
         return self.image_frame.get_label()
 
-    def to_sample(self, float_key="floats", to_chw=True, with_im_info=False):
+    def get_predict(self, key="predict"):
         """
-        ImageFrame toSample
+        get prediction from ImageFrame
         """
-        return self.image_frame.to_sample(float_key, to_chw, with_im_info)
+        return self.image_frame.get_predict(key)
 
+    def get_sample(self):
+        """
+        get sample from ImageFrame
+        """
+        return self.image_frame.get_sample()
+
+    def get_uri(self):
+        """
+        get uri from imageframe
+        """
+        return self.image_frame.get_uri()
+
+    def set_label(self, label, bigdl_type="float"):
+        """
+        set label for imageframe
+        """
+        return callBigDlFunc(bigdl_type,
+                             "setLabel", label, self.value)
+
+    def random_split(self, weights):
+        """
+        Random split imageframes according to weights
+        :param weights: weights for each ImageFrame
+        :return: 
+        """
+        jvalues =  self.image_frame.random_split(weights)
+        return [ImageFrame(jvalue) for jvalue in jvalues]
 
 class LocalImageFrame(ImageFrame):
     """
@@ -187,8 +216,8 @@ class LocalImageFrame(ImageFrame):
             self.value = jvalue
         else:
             # init from image ndarray list and label rdd(optional)
-            image_tensor_list = image_list.map(lambda image: JTensor.from_ndarray(image))
-            label_tensor_list = label_list.map(lambda label: JTensor.from_ndarray(label)) if label_list else None
+            image_tensor_list = map(lambda image: JTensor.from_ndarray(image), image_list)
+            label_tensor_list = map(lambda label: JTensor.from_ndarray(label), label_list) if label_list else None
             self.value = callBigDlFunc(bigdl_type, JavaValue.jvm_class_constructor(self),
                                        image_tensor_list, label_tensor_list)
 
@@ -209,14 +238,21 @@ class LocalImageFrame(ImageFrame):
         labels = callBigDlFunc(self.bigdl_type, "localImageFrameToLabelTensor", self.value)
         return map(lambda tensor: tensor.to_ndarray(), labels)
 
-    def to_sample(self, float_key="floats", to_chw=True, with_im_info=False):
+    def get_predict(self, key="predict"):
         """
-        to sample list
+        get prediction list from ImageFrame
         """
-        return callBigDlFunc(self.bigdl_type,
-                             "localImageFrameToSample", self.value, float_key, to_chw, with_im_info)
+        predicts = callBigDlFunc(self.bigdl_type, "localImageFrameToPredict", self.value, key)
+        return map(lambda predict: (predict[0], predict[1].to_ndarray()) if predict[1] else (predict[0], None), predicts)
 
+    def get_sample(self,  key="sample"):
+        return callBigDlFunc(self.bigdl_type, "localImageFrameToSample", self.value, key)
 
+    def get_uri(self, key = "uri"):
+        return callBigDlFunc(self.bigdl_type, "localImageFrameToUri", self.value, key)
+
+    def random_split(self, weights):
+        raise "random split not supported in LocalImageFrame"
 
 class DistributedImageFrame(ImageFrame):
     """
@@ -251,12 +287,21 @@ class DistributedImageFrame(ImageFrame):
         tensor_rdd = callBigDlFunc(self.bigdl_type, "distributedImageFrameToLabelTensorRdd", self.value)
         return tensor_rdd.map(lambda tensor: tensor.to_ndarray())
 
-    def to_sample(self, float_key="floats", to_chw=True, with_im_info=False):
+    def get_predict(self, key="predict"):
         """
-        to sample rdd
+        get prediction rdd from ImageFrame
         """
-        return callBigDlFunc(self.bigdl_type,
-                             "distributedImageFrameToSampleRdd", self.value, float_key, to_chw, with_im_info)
+        predicts = callBigDlFunc(self.bigdl_type, "distributedImageFrameToPredict", self.value, key)
+        return predicts.map(lambda predict: (predict[0], predict[1].to_ndarray()) if predict[1] else (predict[0], None))
+
+    def get_sample(self,  key="sample"):
+        return callBigDlFunc(self.bigdl_type, "distributedImageFrameToSample", self.value, key)
+
+    def get_uri(self, key = "uri"):
+        return callBigDlFunc(self.bigdl_type, "distributedImageFrameToUri", self.value, key)
+
+    def random_split(self, weights):
+        return callBigDlFunc(self.bigdl_type, "distributedImageFrameRandomSplit", self.value, weights)
 
 class HFlip(FeatureTransformer):
     """
@@ -273,10 +318,15 @@ class Resize(FeatureTransformer):
     :param resize_w width after resize
     :param resize_mode if resizeMode = -1, random select a mode from (Imgproc.INTER_LINEAR,
      Imgproc.INTER_CUBIC, Imgproc.INTER_AREA, Imgproc.INTER_NEAREST, Imgproc.INTER_LANCZOS4)
+    :param use_scale_factor if true, scale factor fx and fy is used, fx = fy = 0
+    note that the result of the following are different
+    Imgproc.resize(mat, mat, new Size(resizeWH, resizeWH), 0, 0, Imgproc.INTER_LINEAR)
+    Imgproc.resize(mat, mat, new Size(resizeWH, resizeWH))
     """
 
-    def __init__(self, resize_h, resize_w, resize_mode = 1, bigdl_type="float"):
-        super(Resize, self).__init__(bigdl_type, resize_h, resize_w, resize_mode)
+    def __init__(self, resize_h, resize_w, resize_mode = 1, use_scale_factor=True,
+                 bigdl_type="float"):
+        super(Resize, self).__init__(bigdl_type, resize_h, resize_w, resize_mode, use_scale_factor)
 
 class Brightness(FeatureTransformer):
     """
@@ -334,7 +384,7 @@ class ChannelNormalize(FeatureTransformer):
     :param std_g std value in G channel
     :param std_b std value in B channel
     """
-    def __init__(self, mean_r, mean_b, mean_g, std_r=1.0, std_g=1.0, std_b=1.0, bigdl_type="float"):
+    def __init__(self, mean_r, mean_g, mean_b, std_r=1.0, std_g=1.0, std_b=1.0, bigdl_type="float"):
         super(ChannelNormalize, self).__init__(bigdl_type, mean_r, mean_g, mean_b, std_r, std_g, std_b)
         
 class PixelNormalize(FeatureTransformer):
@@ -531,21 +581,48 @@ class RoiNormalize(FeatureTransformer):
         super(RoiNormalize, self).__init__(bigdl_type)
 
 class MatToFloats(FeatureTransformer):
+    """
+    Transform OpenCVMat to float array, note that in this transformer, the mat is released
+    :param valid_height valid height in case the mat is invalid
+    :param valid_width valid width in case the mat is invalid
+    :param valid_channel valid channel in case the mat is invalid
+    :param out_key key to store float array
+    :param share_buffer share buffer of output
+    """
 
     def __init__(self, valid_height=300, valid_width=300, valid_channel=300,
-                 mean_r=-1.0, mean_g=-1.0, mean_b=-1.0, out_key = "floats", bigdl_type="float"):
+                 out_key = "floats", share_buffer=True, bigdl_type="float"):
         super(MatToFloats, self).__init__(bigdl_type, valid_height, valid_width, valid_channel,
-                                          mean_r, mean_g, mean_b, out_key)
+                                          out_key, share_buffer)
+
+class MatToTensor(FeatureTransformer):
+    """
+    transform opencv mat to tensor
+    :param to_rgb BGR to RGB (default is BGR)
+    :param tensor_key key to store transformed tensor
+    """
+
+    def __init__(self, to_rgb=False, tensor_key="imageTensor", bigdl_type="float"):
+        super(MatToTensor, self).__init__(bigdl_type, to_rgb, tensor_key)
+
 class AspectScale(FeatureTransformer):
     """
     Resize the image, keep the aspect ratio. scale according to the short edge
-    :param scale scale size, apply to short edge
+    :param min_size scale size, apply to short edge
     :param scale_multiple_of make the scaled size multiple of some value
     :param max_size max size after scale
+    :param resize_mode if resizeMode = -1, random select a mode from
+    (Imgproc.INTER_LINEAR, Imgproc.INTER_CUBIC, Imgproc.INTER_AREA,
+    Imgproc.INTER_NEAREST, Imgproc.INTER_LANCZOS4)
+    :param use_scale_factor if true, scale factor fx and fy is used, fx = fy = 0
+    :aram min_scale control the minimum scale up for image
     """
 
-    def __init__(self, scale, scale_multiple_of = 1, max_size = 1000, bigdl_type="float"):
-        super(AspectScale, self).__init__(bigdl_type, scale, scale_multiple_of, max_size)
+    def __init__(self, min_size, scale_multiple_of = 1, max_size = 1000,
+                 resize_mode = 1, use_scale_factor=True, min_scale=-1.0,
+                 bigdl_type="float"):
+        super(AspectScale, self).__init__(bigdl_type, min_size, scale_multiple_of, max_size,
+                                          resize_mode, use_scale_factor, min_scale)
         
 class RandomAspectScale(FeatureTransformer):
     """
@@ -560,7 +637,114 @@ class RandomAspectScale(FeatureTransformer):
 class BytesToMat(FeatureTransformer):
     """
     Transform byte array(original image file in byte) to OpenCVMat
+    :param byte_key key that maps byte array
     """
-    def __init__(self, bigdl_type="float"):
-        super(BytesToMat, self).__init__(bigdl_type)
+    def __init__(self, byte_key = "bytes", bigdl_type="float"):
+        super(BytesToMat, self).__init__(bigdl_type, byte_key)
+
+class ImageFrameToSample(FeatureTransformer):
+    """
+    transform imageframe to samples
+    :param input_keys keys that maps inputs (each input should be a tensor)
+    :param target_keys keys that maps targets (each target should be a tensor)
+    :param sample_key key to store sample
+    """
+    def __init__(self, input_keys=["imageTensor"], target_keys=None,
+                 sample_key="sample", bigdl_type="float"):
+        super(ImageFrameToSample, self).__init__(bigdl_type, input_keys, target_keys, sample_key)
+
+class PixelBytesToMat(FeatureTransformer):
+    """
+    Transform byte array(pixels in byte) to OpenCVMat
+    :param byte_key key that maps byte array
+    """
+    def __init__(self, byte_key = "bytes", bigdl_type="float"):
+        super(PixelBytesToMat, self).__init__(bigdl_type, byte_key)
+
+class FixExpand(FeatureTransformer):
+    """
+    Expand image with given expandHeight and expandWidth,
+    put the original image to the center of expanded image
+    :param expand_height height expand to
+    :param expand_width width expand to
+    """
+    def __init__(self, expand_height, expand_width, bigdl_type="float"):
+        super(FixExpand, self).__init__(bigdl_type, expand_height, expand_width)
+
+class ChannelScaledNormalizer(FeatureTransformer):
+    """
+    Scaled image at channel level with offset and scale
+    :param mean_r : offset for R channel
+    :param mean_g : offset for G channel
+    :param mean_b: offset for B channel
+    :param scale: scaling factor for all channels
+    """
+    def __init__(self, mean_r, mean_g, mean_b, scale, bigdl_type="float"):
+        super(ChannelScaledNormalizer, self).__init__(bigdl_type, mean_r, mean_g, mean_b, scale)
+
+class RandomAlterAspect(FeatureTransformer):
+    """
+    Apply random crop based on area ratio and resize to cropLenth size
+    :param min_area_ratio  min area ratio
+    :param max_area_ratio  max area ratio
+    :param min_aspect_ratio_change factor applied to ratio area
+    :param interp_mode   interp mode applied in resize
+    :param crop_length final size resized to
+    """
+    def __init__(self, min_area_ratio,
+                 max_area_ratio,
+                 min_aspect_ratio_change,
+                 interp_mode,
+                 crop_length, bigdl_type="float"):
+        super(RandomAlterAspect, self).__init__(bigdl_type, min_area_ratio,
+                                                max_area_ratio,
+                                                min_aspect_ratio_change,
+                                                interp_mode,
+                                                crop_length)
+
+class RandomCropper(FeatureTransformer):
+    """
+    Random cropper on uniform distribution with fixed height & width
+    :param crop_w  width cropped to
+    :param crop_h height cropped to
+    :param mirror   whether mirror
+    :param cropper_method crop method
+    :param channels total channels
+    """
+    def __init__(self, crop_w, crop_h, mirror, cropper_method, channels, bigdl_type="float"):
+        super(RandomCropper, self).__init__(bigdl_type, crop_w, crop_h, mirror, cropper_method, channels)
+
+class RandomResize(FeatureTransformer):
+    """
+    Random resize between minSize and maxSize and scale height and width to each other
+    :param min_size min size to resize to
+    :param max_size max size to resize to
+    """
+    def __init__(self, min_size, max_size, bigdl_type="float"):
+        super(RandomResize, self).__init__(bigdl_type, min_size, max_size)
+
+class SeqFileFolder(JavaValue):
+
+    @classmethod
+    def files_to_image_frame(cls,
+                             url,
+                             sc,
+                             class_num,
+                             partition_num=-1,
+                             bigdl_type="float"):
+        """
+        Extract hadoop sequence files from an HDFS path as ImageFrame
+        :param url: sequence files folder path
+        :param sc: spark context
+        :param class_num: class number of data
+        :param partition_num: partition number, default: Engine.nodeNumber() * Engine.coreNumber()
+        """
+        jvalue = callBigDlFunc(bigdl_type,
+                               "seqFilesToImageFrame",
+                               url,
+                               sc,
+                               class_num,
+                               partition_num)
+        return ImageFrame(jvalue=jvalue)
+
 

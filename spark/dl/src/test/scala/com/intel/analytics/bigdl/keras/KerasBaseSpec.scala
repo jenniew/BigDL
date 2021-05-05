@@ -54,9 +54,8 @@ abstract class KerasBaseSpec extends BigDLSpecHelper {
     val bgradInput = bmodel.backward(input, boutput.clone())
     bgradInput.almostEqual(gradInput, precision) should be(true)
 
-
     val parameters = bmodel.parameters()
-    if (parameters != null) {
+    if (gradWeight != null) {
       val bgradWeights = parameters._2
       (bgradWeights, weightConverter(gradWeight)).zipped.foreach { (bgrad, kgrad) =>
         bgrad.almostEqual(kgrad, precision) should be(true)
@@ -70,7 +69,7 @@ abstract class KerasBaseSpec extends BigDLSpecHelper {
     ifskipTest()
 
     val (gradInput, gradWeight, weights, input, target, output) =
-      KerasRunner.run(kerasCode, is_loss = true)
+      KerasRunner.run(kerasCode, Loss)
 
     val boutput = bmodel.forward(input, target)
     val koutput = output.mean()  // the return value from keras is not always averaged.

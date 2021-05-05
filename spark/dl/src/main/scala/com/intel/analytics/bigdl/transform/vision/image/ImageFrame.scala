@@ -18,20 +18,22 @@ package com.intel.analytics.bigdl.transform.vision.image
 
 import java.io.{File, FilenameFilter}
 
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.utils.T
 import org.apache.commons.io.FileUtils
 import org.apache.commons.io.filefilter.WildcardFileFilter
 import org.apache.log4j.Logger
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SQLContext}
+import org.apache.spark.sql.SQLContext
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import scala.reflect.ClassTag
 
 /**
  * ImageFrame wraps a set of ImageFeature
  */
-trait ImageFrame {
+trait ImageFrame extends Serializable {
 
   /**
    * transform ImageFrame
@@ -42,7 +44,7 @@ trait ImageFrame {
 
   // scalastyle:off methodName
   // scalastyle:off noSpaceBeforeLeftBracket
-  def -> [C: ClassTag](transformer: FeatureTransformer): ImageFrame = {
+  def -> (transformer: FeatureTransformer): ImageFrame = {
     this.transform(transformer)
   }
 
@@ -55,6 +57,24 @@ trait ImageFrame {
    * whether this is a DistributedImageFrame
    */
   def isDistributed(): Boolean
+
+  /**
+   * return LocalImageFrame
+   */
+  def toLocal(): LocalImageFrame = this.asInstanceOf[LocalImageFrame]
+
+  /**
+   * return DistributedImageFrame
+   */
+  def toDistributed(): DistributedImageFrame = this.asInstanceOf[DistributedImageFrame]
+
+  /**
+   * set label for ImageFrame
+   * @param labelMap label map : uri to label mapping
+   */
+
+  def setLabel(labelMap: mutable.Map[String, Float]): Unit
+
 }
 
 object ImageFrame {
@@ -85,11 +105,12 @@ object ImageFrame {
    * if sc is defined, path can be local or HDFS. Wildcard character are supported.
    * if sc is null, path is local directory/image file/image file with wildcard character
    * @param sc SparkContext
+   * @param minPartitions A suggestion value of the minimal splitting number for input data.
    * @return ImageFrame
    */
-  def read(path: String, sc: SparkContext = null): ImageFrame = {
+  def read(path: String, sc: SparkContext = null, minPartitions: Int = 1): ImageFrame = {
     if (null != sc) {
-      val images = sc.binaryFiles(path).map { case (p, stream) =>
+      val images = sc.binaryFiles(path, minPartitions).map { case (p, stream) =>
         ImageFeature(stream.toArray(), uri = p)
       }
       ImageFrame.rdd(images) -> BytesToMat()
@@ -135,8 +156,8 @@ object ImageFrame {
       val uri = row.getAs[String](ImageFeature.uri)
       val image = row.getAs[Array[Byte]](ImageFeature.bytes)
       ImageFeature(image, uri = uri)
-    }).map(BytesToMat.transform)
-    ImageFrame.rdd(images)
+    })
+    (ImageFrame.rdd(images) -> BytesToMat()).toDistributed()
   }
 
   /**
@@ -144,10 +165,12 @@ object ImageFrame {
    *
    * @param path path to read images. Local or HDFS. Wildcard character are supported.
    * @param output Parquet file path
+   * @param partitionNum partition number
    */
-  def writeParquet(path: String, output: String, sqlContext: SQLContext): Unit = {
+  def writeParquet(path: String, output: String, sqlContext: SQLContext,
+    partitionNum: Int = 1): Unit = {
     import sqlContext.implicits._
-    val df = sqlContext.sparkContext.binaryFiles(path)
+    val df = sqlContext.sparkContext.binaryFiles(path, partitionNum)
       .map { case (p, stream) =>
         (p, stream.toArray())
       }.toDF(ImageFeature.uri, ImageFeature.bytes)
@@ -173,6 +196,13 @@ class LocalImageFrame(var array: Array[ImageFeature]) extends ImageFrame {
   override def isLocal(): Boolean = true
 
   override def isDistributed(): Boolean = false
+
+  override def setLabel(labelMap: mutable.Map[String, Float]): Unit = {
+    array = array.map(imageFeature => {
+      imageFeature.setLabel(labelMap)
+      imageFeature
+    })
+  }
 }
 
 /**
@@ -189,4 +219,16 @@ class DistributedImageFrame(var rdd: RDD[ImageFeature]) extends ImageFrame {
   override def isLocal(): Boolean = false
 
   override def isDistributed(): Boolean = true
+
+  override def setLabel(labelMap: mutable.Map[String, Float]): Unit = {
+    rdd = rdd.map(imageFeature => {
+      imageFeature.setLabel(labelMap)
+      imageFeature
+    })
+  }
+
+  def randomSplit(weights: Array[Double]): Array[ImageFrame] = {
+    val splitRDD = rdd.randomSplit(weights)
+    splitRDD.map(new DistributedImageFrame(_))
+  }
 }

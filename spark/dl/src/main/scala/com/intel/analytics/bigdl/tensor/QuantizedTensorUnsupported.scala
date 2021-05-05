@@ -526,6 +526,16 @@ abstract class QuantizedTensorUnsupported[T: ClassTag] extends Tensor[T] {
     throw new UnsupportedOperationException(errorString)
 
   /**
+   * view this.tensor and add multiple Dimensions to `dim` dimension
+   *
+   * @param t source tensor
+   * @param dim the specific dimension array, default is [1]
+   * @return this
+   */
+  override def addMultiDimension(t: Tensor[T], dims: Array[Int]): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  /**
    * create a new tensor without any change of the tensor
    *
    * @param sizes the size of the new Tensor
@@ -1425,5 +1435,26 @@ abstract class QuantizedTensorUnsupported[T: ClassTag] extends Tensor[T] {
     throw new UnsupportedOperationException(errorString)
 
   override def reduce(dim: Int, result: Tensor[T], reducer: (T, T) => T): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def toArray(): Array[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def erf(): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def erfc(): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def logGamma(): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def digamma(): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def clamp(minValue: Double, maxValue: Double): Tensor[T] =
+    throw new UnsupportedOperationException(errorString)
+
+  override def sumSquare(): T =
     throw new UnsupportedOperationException(errorString)
 }

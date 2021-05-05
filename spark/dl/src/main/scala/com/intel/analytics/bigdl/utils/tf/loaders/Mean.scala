@@ -19,7 +19,8 @@ import java.nio.ByteOrder
 
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
-import com.intel.analytics.bigdl.nn.{Sequential, Mean => MeanNN}
+import com.intel.analytics.bigdl.nn.Sequential
+import com.intel.analytics.bigdl.nn.tf.Mean
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.tf.Context
@@ -54,12 +55,15 @@ class Mean extends TensorflowOpsLoader {
         "Float"
       case DataType.DT_DOUBLE =>
         "Double"
+      case _ => throw new UnsupportedOperationException("Data Type: " + dataType +
+        " is not Unsupported yet.")
     }
     new MeanLoadTF[T](dt, squeeze)
   }
 }
 
-class MeanLoadTF[T: ClassTag](dataType: String, squeeze: Boolean)(implicit ev: TensorNumeric[T])
+class MeanLoadTF[T: ClassTag](val dataType: String,
+                              val squeeze: Boolean)(implicit ev: TensorNumeric[T])
   extends Adapter[T](Array(2)) {
   override def build(tensorArrays: Array[Tensor[_]]): AbstractModule[Activity, Activity, T] = {
     val dims = tensorArrays(0).asInstanceOf[Tensor[Int]]
@@ -70,13 +74,15 @@ class MeanLoadTF[T: ClassTag](dataType: String, squeeze: Boolean)(implicit ev: T
     }
     dataType match {
       case "Int" =>
-        dim.foreach(i => mean.add(new MeanNN[T, Int](i, squeeze = squeeze)))
+        dim.foreach(i => mean.add(Mean[T, Int](i, squeeze = squeeze)))
       case "Long" =>
-        dim.foreach(i => mean.add(new MeanNN[T, Long](i, squeeze = squeeze)))
+        dim.foreach(i => mean.add(Mean[T, Long](i, squeeze = squeeze)))
       case "Float" =>
-        dim.foreach(i => mean.add(new MeanNN[T, Float](i, squeeze = squeeze)))
+        dim.foreach(i => mean.add(Mean[T, Float](i, squeeze = squeeze)))
       case "Double" =>
-        dim.foreach(i => mean.add(new MeanNN[T, Double](i, squeeze = squeeze)))
+        dim.foreach(i => mean.add(Mean[T, Double](i, squeeze = squeeze)))
+      case _ => throw new UnsupportedOperationException("Data Type: " + dataType +
+        " is not Unsupported yet.")
     }
     mean
   }

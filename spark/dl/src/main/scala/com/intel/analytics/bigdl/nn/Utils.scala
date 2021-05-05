@@ -18,11 +18,12 @@ package com.intel.analytics.bigdl.nn
 
 import com.google.protobuf.ByteString
 import com.intel.analytics.bigdl.Module
-import com.intel.analytics.bigdl.nn.abstractnn.{Activity, DataFormat}
+import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity, DataFormat}
 import com.intel.analytics.bigdl.tensor._
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.{T, Table}
 
+import scala.collection.mutable
 import scala.reflect.ClassTag
 
 object Utils {
@@ -235,7 +236,7 @@ object Utils {
       s"$src and $dst is not the same type.")
     dstParameters.copy(srcParameters)
     // copy running status
-    dst.copyStatus(src)
+    dst.setExtraParameter(src.getExtraParameter())
     dst
   }
 
@@ -392,6 +393,54 @@ object Utils {
     Array(padH, padH, padW, padW, oheight, owidth)
   }
 
+  private[nn] def getOutSizeAndPaddingForDNN(
+    inputHeight: Int,
+    inputWidth: Int,
+    dH: Int,
+    dW: Int,
+    kH: Int,
+    kW: Int,
+    padH: Int,
+    padW: Int,
+    ceilMode: Boolean,
+    dilationHeight: Int = 1,
+    dilationWidth: Int = 1,
+    inputdepth: Int = -1,
+    dt: Int = -1,
+    kt: Int = -1,
+    padt: Int = 0,
+    dilationDepth: Int = 1): Array[Int] = {
+    // compute padding left, right, top and bottom
+    var pad_t = padH
+    var pad_b = padH
+    var pad_l = padW
+    var pad_r = padW
+
+    var oheight = 0
+    var owidth = 0
+    var odepth = 0
+
+    val dilationKernelHeight = dilationHeight * (kH - 1) + 1
+    val dilationKernelWidth = dilationWidth * (kW - 1) + 1
+
+    oheight = math.ceil(1.0 * (inputHeight - dilationKernelHeight + 2*padH) / dH).toInt + 1
+    owidth = math.ceil(1.0 * (inputWidth - dilationKernelWidth + 2*padW) / dW).toInt + 1
+
+    if (padH != 0 || padW != 0 || padt != 0 || kH == 1 || kW == 1) {
+      if ((oheight - 1) * dH >= inputHeight + padH) oheight -= 1
+      if ((owidth - 1) * dW >= inputWidth + padW) owidth -= 1
+    }
+
+    val h = inputHeight + pad_t
+//    var pad_b = padH
+    while ((h + pad_b) < (dH * (oheight - 1) + kH)) pad_b = pad_b + 1
+    val w = inputWidth + pad_l
+//    var pad_r = padW
+    while ((w + pad_r) < (dW * (owidth - 1) + kW)) pad_r = pad_r + 1
+
+    Array(pad_t, pad_b, pad_l, pad_r, oheight, owidth)
+  }
+
   private[nn] def getOutputShape(outputHeight: Int, outputWidth: Int, nOutputPlane: Int,
     batchSize: Int = -1, format: DataFormat): Array[Int] = {
     format match {
@@ -408,6 +457,21 @@ object Utils {
           Array(batchSize, outputHeight, outputWidth, nOutputPlane)
         }
 
+    }
+  }
+
+  private[nn] def getOutputSize(inputSize: Int, filterSize: Int,
+                    stride: Int, padding: String) = {
+    padding.toLowerCase() match {
+      case "valid" =>
+        val outputSize = (inputSize - filterSize + stride) / stride
+        (outputSize, 0, 0)
+      case "same" =>
+        val outputSize = (inputSize + stride - 1) / stride
+        val paddingNeeded = math.max(0, (outputSize - 1) * stride + filterSize - inputSize)
+        val padBefore = paddingNeeded / 2
+        val padAfter = paddingNeeded - padBefore
+        (outputSize, padBefore, padAfter)
     }
   }
 
@@ -455,5 +519,106 @@ object Utils {
     }
 
     out
+  }
+
+  private[nn] def getPaddingAndOutputSize(
+    inputHeight: Int,
+    inputWidth: Int,
+    dH: Int,
+    dW: Int,
+    kH: Int,
+    kW: Int,
+    padH: Int,
+    padW: Int,
+    ceilMode: Boolean = false
+  ): (Int, Int, Int, Int, Int, Int) = {
+    // compute padding left, right, top and bottom
+    var pad_t = padH
+    var pad_b = padH
+    var pad_l = padW
+    var pad_r = padW
+
+    var oheight = 0
+    var owidth = 0
+    var odepth = 0
+
+    if (ceilMode) {
+      oheight = math.ceil(1.0 * (inputHeight - kH + 2 * padH) / dH).toInt + 1
+      owidth = math.ceil(1.0 * (inputWidth - kW + 2 * padW) / dW).toInt + 1
+    } else {
+      oheight = math.floor(1.0 * (inputHeight - kH + 2 * padH) / dH).toInt + 1
+      owidth = math.floor(1.0 * (inputWidth - kW + 2 * padW) / dW).toInt + 1
+    }
+    if (padH != 0 || padW != 0 || kH == 1 || kW == 1) {
+      if ((oheight - 1) * dH >= inputHeight + padH) oheight -= 1
+      if ((owidth - 1) * dW >= inputWidth + padW) owidth -= 1
+    }
+
+    val h = inputHeight + pad_t
+    while ((h + pad_b) < (dH * (oheight - 1) + kH)) pad_b = pad_b + 1
+    val w = inputWidth + pad_l
+    while ((w + pad_r) < (dW * (owidth - 1) + kW)) pad_r = pad_r + 1
+
+    (pad_t, pad_b, pad_l, pad_r, oheight, owidth)
+  }
+  /**
+   * Calculate forward time and backward time.
+   * @param times
+   * @tparam T
+   * @return
+   */
+  def calculateFwdBwdTime[T: ClassTag](
+    times: Array[(AbstractModule[_ <: Activity, _ <: Activity, T], Long, Long)]): (Long, Long) = {
+      times.map(t => (t._2, t._3)).reduce((a, b) => (a._1 + b._1, a._2 + b._2))
+  }
+
+  /**
+   * calculate scales of tensor based on the mask
+   *
+   * The mask parameter determines the dimension to which the scales array is applied to.
+   * If the ith bit of mask is set, it will select that dimension and calc scales on that.
+   * For a 5-dimensional tensor T[g0, o1,i2,h3,w4] where the numbering indicates the bit-index:
+   *    + A mask = 3 = $2^0 | 2^1$ selects the group (g0) and output channels (o1).
+   *    + A mask = 2 = $2^1$ selects the output channels (o1).
+   * For a [4, 3, 2, 2] tensor and 3 ( $2^0|2^1$ ) as the mask, it will generate 4*3=12 max values.
+   *
+   * @param tensor the tensor want to be caculated
+   * @param mask the mask value. You can construct it with math.pow(2, ?).
+   * @return the scales of tensor relevant with mask
+   */
+  private[nn] def calcScales(tensor: Tensor[Float], mask: Int): Array[Float] = {
+    // inner helper function
+    def calcScalesHelper(tensor: Tensor[Float], maskStr: String,
+      result: mutable.ListBuffer[Float], index: Int): Unit = {
+      if (index < maskStr.length) {
+        if (maskStr(index).asDigit == 1) { // mask bit is ON at this dimension
+          (1 to tensor.size(index + 1)).foreach(
+            i => { // split the tensor based on its size
+              calcScalesHelper(tensor.narrow(index + 1, i, 1), maskStr, result, index + 1)
+            }
+          )
+        } else {
+          calcScalesHelper(tensor, maskStr, result, index + 1)
+        }
+
+      } else { // finished splitting tensor based on its mask bit, aggregate and append the result
+        result.append(tensor.clone().abs().max())
+      }
+
+    }
+
+    def maskInterval: String = {
+      val start = 0
+      val end = (math.pow(2, tensor.size().length) - 1).toInt
+
+      s"mask should between [$start, $end]"
+    }
+    require(mask.toBinaryString.length <= tensor.size().length, s"$maskInterval")
+
+    val result = mutable.ListBuffer[Float]()
+
+    calcScalesHelper(tensor, mask.toBinaryString.reverse, result, 0 /* start dimension */)
+
+    result.toArray
   }
 }

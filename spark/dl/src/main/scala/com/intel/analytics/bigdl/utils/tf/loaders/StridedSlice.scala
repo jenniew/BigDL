@@ -19,12 +19,11 @@ import java.nio.ByteOrder
 
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
-import com.intel.analytics.bigdl.nn.tf.StrideSlice
+import com.intel.analytics.bigdl.nn.tf.{StridedSlice => StridedSliceOps}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
-import com.intel.analytics.bigdl.utils.Node
 import com.intel.analytics.bigdl.utils.tf.Context
-import org.tensorflow.framework.NodeDef
+import org.tensorflow.framework.{DataType, NodeDef}
 
 import scala.reflect.ClassTag
 
@@ -35,24 +34,25 @@ class StridedSlice extends TensorflowOpsLoader {
   override def build[T: ClassTag](nodeDef: NodeDef, byteOrder: ByteOrder,
     context: Context[T])(implicit ev: TensorNumeric[T]): Module[T] = {
 
-    new StridedSliceLoadTF[T]()
-  }
-}
+    val t = getType(nodeDef, "T")
+    val beginMask = getInt(nodeDef.getAttrMap, "begin_mask")
+    val ellipsisMask = getInt(nodeDef.getAttrMap, "ellipsis_mask")
+    val endMask = getInt(nodeDef.getAttrMap, "end_mask")
+    val newAxisMask = getInt(nodeDef.getAttrMap, "new_axis_mask")
+    val shrinkAxisMask = getInt(nodeDef.getAttrMap, "shrink_axis_mask")
 
-class StridedSliceLoadTF[T: ClassTag]()(implicit ev: TensorNumeric[T])
-  extends Adapter[T](Array(2, 3, 4)) {
-  import StridedSlice._
-
-  override def build(tensorArrays: Array[Tensor[_]]): AbstractModule[Activity, Activity, T] = {
-    val start = oneDTensorToArray(tensorArrays(0).asInstanceOf[Tensor[Int]])
-    val end = oneDTensorToArray(tensorArrays(1).asInstanceOf[Tensor[Int]])
-    val stride = oneDTensorToArray(tensorArrays(2).asInstanceOf[Tensor[Int]])
-
-    val specs = (start zip end zip stride).zipWithIndex
-      .map(elem => (elem._2 + 1, elem._1._1._1 + 1, elem._1._1._2 + 1, elem._1._2))
-
-
-    StrideSlice[T](specs)
+    if (t == DataType.DT_INT32) {
+      StridedSliceOps[T, Int](beginMask, endMask, ellipsisMask,
+        newAxisMask, shrinkAxisMask, true)
+    } else if (t == DataType.DT_FLOAT) {
+      StridedSliceOps[T, Float](beginMask, endMask, ellipsisMask,
+        newAxisMask, shrinkAxisMask, true)
+    } else if (t == DataType.DT_DOUBLE) {
+      StridedSliceOps[T, Double](beginMask, endMask, ellipsisMask,
+        newAxisMask, shrinkAxisMask, true)
+    } else {
+      throw new UnsupportedOperationException(s"Not support load StridedSlice with type ${t}")
+    }
   }
 }
 

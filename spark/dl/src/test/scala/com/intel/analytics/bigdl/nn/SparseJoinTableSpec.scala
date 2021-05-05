@@ -19,6 +19,7 @@ package com.intel.analytics.bigdl.nn
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.{RandomGenerator, T}
 import com.intel.analytics.bigdl.numeric.NumericFloat
+import com.intel.analytics.bigdl.utils.serializer.ModuleSerializationTest
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.util.Random
@@ -105,4 +106,43 @@ class SparseJoinTableSpec  extends FlatSpec with Matchers {
     Tensor.dense(out1) shouldEqual denseInput
   }
 
+  "Sparse JoinTable on narrowed table" should "return the same result 3" in {
+    val indices1 = Array(0, 1, 2, 3, 3)
+    val indices2 = Array(0, 1, 2, 3, 4)
+    val values1 = Array(1f, 2f, 3f, 4f, 5f)
+    val input1 = Tensor.sparse(Array(indices1, indices2), values1, Array(4, 5))
+      .resize(Array(4, 5), 4)
+    val indices3 = Array(0, 1, 2, 3, 4, 4, 5)
+    val indices4 = Array(0, 1, 2, 3, 3, 4, 2)
+    val values2 = Array(6f, 7f, 8f, 9f, 10f, 11f, 12f)
+    val input2 = Tensor.sparse(Array(indices3, indices4), values2, Array(6, 5))
+      .narrow(1, 2, 4)
+    val sparseModel = Sequential().add(ParallelTable().add(Identity()).add(Identity()))
+      .add(SparseJoinTable(2))
+
+    val sparseInput = T(input1, input2)
+    val output = sparseModel.forward(sparseInput).toTensor[Float]
+
+    val exceptedIndices1 = Array(0, 0, 1, 1, 2, 2, 3, 3, 3)
+    val exceptedIndices2 = Array(0, 6, 1, 7, 2, 8, 3, 8, 9)
+    val exceptedValues = Array(1f, 7f, 2, 8, 3, 9, 4, 10, 11)
+    val exceptedOutput = Tensor.sparse(Array(exceptedIndices1, exceptedIndices2),
+      exceptedValues, Array(4, 10))
+
+    output should be (exceptedOutput)
+  }
+
+}
+
+class SparseJoinTableSerialTest extends ModuleSerializationTest {
+  override def test(): Unit = {
+    val sparseJoinTable = SparseJoinTable[Float](2).setName("sparseJoinTable")
+    val sparseModel = Sequential[Float]().
+      add(ParallelTable[Float]().add(Identity[Float]()).add(Identity[Float]()))
+      .add(sparseJoinTable)
+    val input1 = Tensor[Float](4, 3).apply1(_ => Random.nextInt(2) * Random.nextFloat())
+    val input2 = Tensor[Float](4, 2).apply1(_ => Random.nextInt(2) * Random.nextFloat())
+    val sparseInput = T(Tensor.sparse(input1), Tensor.sparse(input2))
+    runSerializationTest(sparseJoinTable, sparseInput)
+  }
 }

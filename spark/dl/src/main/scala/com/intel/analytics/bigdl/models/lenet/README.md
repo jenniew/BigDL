@@ -17,7 +17,7 @@ to **train-images.idx3-ubyte**. Please change the name back before you run the e
 
 ## Get the JAR
 You can build one by refer to the
-[Build Page](https://github.com/intel-analytics/BigDL/wiki/Build-Page) from the source code.
+[Build Page](https://bigdl-project.github.io/master/#ScalaUserGuide/install-build-src/) from the source code.
 
 ## Train the Model
 ### Use Apache Spark
@@ -111,3 +111,4 @@ In the above command
 * -f: where you put your MNIST data
 * --model: the model snapshot file
 * -b: The mini-batch size. It is expected that the mini-batch size is a multiple of node_number * core_number.
+* --optimizerVersion: option can be used to set DistriOptimizer version, the value can be "optimizerV1" or "optimizerV2".

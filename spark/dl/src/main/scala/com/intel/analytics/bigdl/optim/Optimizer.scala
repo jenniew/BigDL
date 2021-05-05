@@ -20,13 +20,19 @@ import java.nio.file.{Files, Paths}
 
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.dataset.{DataSet, SampleToMiniBatch, _}
-import com.intel.analytics.bigdl.tensor.Tensor
+
+import scala.collection.mutable
+import com.intel.analytics.bigdl.parameters.{ConstantClippingProcessor,
+  L2NormClippingProcessor, ParameterProcessor}
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils._
 import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
+import com.intel.analytics.bigdl.utils.Engine
+import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
 
-import scala.reflect.ClassTag
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.{ClassTag, classTag}
 
 /**
  * [[Optimizer]] is an abstract class which is used to train a model automatically
@@ -41,11 +47,12 @@ import scala.reflect.ClassTag
 // TODO: remove D to be MiniBatch[T]
 abstract class Optimizer[T: ClassTag, D](
   protected var model: Module[T],
-  protected val dataset: DataSet[D],
-  protected val criterion: Criterion[T])(implicit ev : TensorNumeric[T])
+  protected var dataset: DataSet[D],
+  protected var criterion: Criterion[T])(implicit ev : TensorNumeric[T])
 {
+  import Optimizer.{logger, checkSubModules}
   protected var state: Table = T()
-  protected var optimMethod: OptimMethod[T] = new SGD[T]()
+  protected var optimMethods: Map[String, OptimMethod[T]] = Map(model.getName -> new SGD())
   protected var endWhen: Trigger = Trigger.maxIteration(100)
 
   protected var checkpointTrigger: Option[Trigger] = None
@@ -65,6 +72,13 @@ abstract class Optimizer[T: ClassTag, D](
   protected var maxDropPercentage: Double = 0.0
   protected var computeThresholdbatchSize: Int = 100
   protected var warmupIterationNum: Int = 200
+
+  /**
+   * a list of ParameterProcessor, orders matter
+   */
+  protected var parameterProcessors = ArrayBuffer[ParameterProcessor]()
+
+  model.checkDuplicate()
 
   /**
    * Trigger the optimization process
@@ -127,7 +141,7 @@ abstract class Optimizer[T: ClassTag, D](
     val dataSet =
       (DataSet.rdd(sampleRDD) ->
         SampleToMiniBatch(batchSize, Some(featurePaddingParam), Some(labelPaddingParam)))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]]
+        .toDistributed()
     this.validationDataSet = Some(dataSet)
     this.validationMethods = Some(vMethods)
     this
@@ -148,7 +162,7 @@ abstract class Optimizer[T: ClassTag, D](
     this.validationTrigger = Some(trigger)
     val dataSet =
       (DataSet.rdd(sampleRDD) -> SampleToMiniBatch(batchSize))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]]
+        .toDistributed()
     this.validationDataSet = Some(dataSet)
     this.validationMethods = Some(vMethods)
     this
@@ -169,7 +183,7 @@ abstract class Optimizer[T: ClassTag, D](
     this.validationTrigger = Some(trigger)
     val dataSet =
       (DataSet.rdd(sampleRDD) -> SampleToMiniBatch(miniBatch, batchSize, None))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]]
+        .toDistributed()
     this.validationDataSet = Some(dataSet)
     this.validationMethods = Some(vMethods)
     this
@@ -222,15 +236,118 @@ abstract class Optimizer[T: ClassTag, D](
     this
   }
 
+  private def resetEpoch(): Unit = {
+    optimMethods.foreach{ case (moduleName, optimMethod) =>
+      optimMethod.state.update("epoch", 1)
+      optimMethod.state.update("neval", 1)
+      optimMethod.state.update("Loss", Float.PositiveInfinity)
+      optimMethod.state.update("score", 0f)
+      optimMethod.state.update("recordsProcessedThisEpoch", 0)
+    }
+  }
+
+
   /**
-   * Set a model to the optimizer
+   * Set a model to the optimizer.
+   * Notice: if current optimMethod in this optimizer is not a global optimMethod,
+   * this setModel will throw an exception. You should use setModelAndOptimMethods instead.
    *
    * @param newModel new model
    */
   def setModel(newModel: Module[T]): this.type = {
+    // check if the old optimMethods is a global one.
+    if (optimMethods.size == 1 && optimMethods.contains(model.getName())) {
+      if (newModel.getName() != model.getName()) {
+        optimMethods = Map(newModel.getName() -> optimMethods(model.getName()))
+      }
+      logger.info(s"Optimizer.setModel: Detect current optimMethod is a global optimMethod." +
+        s" Automatically associate the current optimMethod with the new model.")
+    } else {
+      throw new IllegalArgumentException("Optimizer.setModel: Detect current optimMethod" +
+        " is not a global optimMethod. Please use setModelAndOptimMethods")
+    }
+
     model = newModel
+
+    model.checkDuplicate()
+
+    // if a new Model is set, then reset "epoch", "neval" .etc.
+    resetEpoch()
     this
   }
+
+  /**
+   * Set new model and new optimMethods to the optimizer.
+   *
+   * @param newModel new model
+   * @param newOptimMethods new optimMethods
+   */
+  def setModelAndOptimMethods(
+        newModel: Module[T],
+        newOptimMethods: Map[String, OptimMethod[T]]): this.type = {
+    // check if the old optimMethods is a global one.
+    model = newModel
+    optimMethods = newOptimMethods
+
+    model.checkDuplicate()
+
+    // if a new Model is set, then reset "epoch", "neval" .etc.
+    resetEpoch()
+    this
+  }
+
+
+  /**
+   * Set new train dataset.
+   * User can supply a customized implementation of trait MiniBatch to define
+   * how data is organized and retrieved in a mini batch.
+   *
+   * @param sampleRDD training Samples
+   * @param batchSize mini batch size
+   * @param miniBatchImpl An User-Defined MiniBatch implementation.
+   * @return the Optimizer
+   */
+  def setTrainData(sampleRDD: RDD[Sample[T]],
+                 batchSize: Int,
+                 miniBatchImpl: MiniBatch[T]): this.type = {
+    throw new UnsupportedOperationException(
+      s"setTrainData(sampleRDD, batchSize,miniBatch) " +
+        s"is only supported in distributed optimizer")
+    this
+  }
+
+  /**
+   * Set new train dataset.
+   *
+   * @param sampleRDD           training Samples
+   * @param batchSize           mini batch size
+   * @param featurePaddingParam feature padding strategy, see
+   *                            [[com.intel.analytics.bigdl.dataset.PaddingParam]] for details.
+   * @param labelPaddingParam   label padding strategy, see
+   *                            [[com.intel.analytics.bigdl.dataset.PaddingParam]] for details.
+   * @return the optimizer
+   */
+  def setTrainData(sampleRDD: RDD[Sample[T]],
+                 batchSize: Int,
+                 featurePaddingParam: PaddingParam[T] = null,
+                 labelPaddingParam: PaddingParam[T] = null): this.type = {
+    throw new UnsupportedOperationException(
+      s"setTrainData(sampleRDD,batchSize,featurePaddingParam=null,labelPaddingParam=null) " +
+        s"is only supported in distributed optimizer")
+    this
+  }
+
+
+  /**
+   * Set a new criterion to the optimizer
+   *
+   * @param newCriterion new criterion
+   */
+  def setCriterion(newCriterion: Criterion[T]): this.type = {
+    this.criterion = newCriterion
+    this
+  }
+
 
   /**
    * Set a state(learning rate, epochs...) to the optimizer
@@ -248,7 +365,19 @@ abstract class Optimizer[T: ClassTag, D](
    * @param method optimization method
    */
   def setOptimMethod(method : OptimMethod[T]): this.type = {
-    this.optimMethod = method
+    checkSubModules(model, Array(model.getName()))
+    this.optimMethods = Map(model.getName -> method)
+    this
+  }
+
+  /**
+   * Set optimization methods for each submodule.
+   *
+   * @param method A mapping of submodule -> OptimMethod
+   */
+  def setOptimMethods(method: Map[String, OptimMethod[T]]): this.type = {
+    checkSubModules(model, method.keys.toSeq)
+    this.optimMethods = method
     this
   }
 
@@ -284,12 +413,127 @@ abstract class Optimizer[T: ClassTag, D](
   }
 
   def prepareInput(): Unit = {}
+
+  /**
+   * Disable gradient clipping
+   * @return
+   */
+  def disableGradientClipping()
+  : this.type = {
+    parameterProcessors = parameterProcessors.filterNot(processor =>
+      (processor.isInstanceOf[ConstantClippingProcessor] ||
+        processor.isInstanceOf[L2NormClippingProcessor]))
+    this
+  }
+
+  /**
+   * Set constant gradient clipping
+   * @param min the minimum value to clip by
+   * @param max the maximum value to clip by
+   * @return
+   */
+  def setConstantGradientClipping(min: Double, max: Double)
+  : this.type = {
+    require(min <= max, "min value can not be larger than max")
+    val index = Optimizer.findIndex[ConstantClippingProcessor](parameterProcessors)
+    if (index == -1) {
+      parameterProcessors.append(new ConstantClippingProcessor(min, max))
+    } else {
+      parameterProcessors(index) = new ConstantClippingProcessor(min, max)
+    }
+    this
+  }
+
+
+  /**
+   * Clip gradient to a maximum L2-norm
+   * @param l2NormThreshold gradient L2-Norm threshold
+   * @return
+   */
+  def setGradientClippingByl2Norm(l2NormThreshold: Double)
+  : this.type = {
+    require(optimMethods.size == 1, "Only support 1 optimMethod.")
+    require(l2NormThreshold > 0, "l2NormThreshold should larger than zero")
+    val index = Optimizer.findIndex[L2NormClippingProcessor](parameterProcessors)
+    if (index == -1) {
+      parameterProcessors.append(new L2NormClippingProcessor(l2NormThreshold))
+    } else {
+      parameterProcessors(index) = new L2NormClippingProcessor(l2NormThreshold)
+    }
+    this
+  }
+
+  /**
+   * shutdown the optimizer, which will release the native resources if exists.
+   */
+  private[optim] def shutdown(): Unit = {}
+
+  def reserveOptim(reserve: Boolean): this.type = {
+    throw new UnsupportedOperationException(
+      "Only support DistriOptimizer to reserve optim methods for each worker")
+  }
 }
 
 object Optimizer {
+  private val logger: Logger = Logger.getLogger(getClass)
+
   private[bigdl] def header(epoch: Int, count: Int, total: Long, iter: Int, wallClockTime: Long)
   : String = {
     s"[Epoch $epoch $count/$total][Iteration $iter][Wall Clock ${wallClockTime / 1e9}s]"
+  }
+
+  /**
+   * Check if the sub modules are in the model, if each sub modules' parameter
+   * is contiguous, if sub modules' parameter is duplicated.
+   * @param model
+   * @param subModuleNames
+   * @param ev
+   * @tparam T
+   */
+  private[bigdl] def checkSubModules[T: ClassTag](
+        model: Module[T],
+        subModuleNames: Seq[String])(implicit ev: TensorNumeric[T]): Unit = {
+    val modelParameters = model.getParameters()
+    val p = subModuleNames.map{subModuleName =>
+      val subModule = model(subModuleName)
+      require(subModule.isDefined, s"Optimizer: couldn't find $subModuleName in $model")
+      val subModuleWeights = subModule.get.getParameters()._1
+      require(subModuleWeights.nElement() > 0, s"Optimizer: $subModuleName doesn't have" +
+        s" any trainable parameters, please check your model and optimMethods.")
+      // If the storage subModule's parameter is the same with the storage of the submodule,
+      // then subModule's parameter is contiguous.
+      require(modelParameters._1.storage() == subModuleWeights.storage(), s"Optimizer:" +
+        s" $subModuleName's parameter is not contiguous.")
+      (subModuleName, subModuleWeights)
+    }.toArray
+
+    // make sure if parameters in submodules aren't duplicated.
+    if (p.length != 1) {
+      val sortedWeights = p.sortWith((a, b) => a._2.storageOffset() < b._2.storageOffset())
+      var i = 0
+      while (i < sortedWeights.length - 1) {
+        val current = sortedWeights(i)
+        val next = sortedWeights(i + 1)
+        require(current._2.storageOffset() + current._2.nElement() <= next._2.storageOffset(),
+          s"Optimizer: ${current._1} and ${next._1}'s parameters are duplicated." +
+            s" Please check your model and optimMethods.")
+        i += 1
+      }
+    }
+  }
+
+  /**
+   * Combine the hyper parameters in optimMethods.
+   */
+  private[bigdl] def getHyperParameterLog(optimMethods: Map[String, OptimMethod[_]]): String = {
+    optimMethods.map{ case (moduleName, optimMethod) =>
+        val log = optimMethod.getHyperParameter()
+        if (log.isEmpty) {
+          log
+        } else {
+          s"${moduleName}'s hyper parameters: ${log} "
+        }
+      }.reduce(_ + _)
   }
 
   /**
@@ -342,25 +586,11 @@ object Optimizer {
     }
   }
 
-  def apply[T: ClassTag](
-      model: Module[T],
-      sampleRDD: RDD[Sample[T]],
-      criterion: Criterion[T],
-      batchSize: Int
-      )(implicit ev: TensorNumeric[T]): Optimizer[T, MiniBatch[T]] = {
-    new DistriOptimizer[T](
-      _model = model,
-      dataset = (DataSet.rdd(sampleRDD) -> SampleToMiniBatch(batchSize))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]],
-      criterion = criterion
-    ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
-  }
 
   /**
-   * Apply an Optimizer who could apply padding to the Samples
-   * with a padding strategy.
+   * Apply an Optimizer.
    *
-   * @param model               model will be optimizied
+   * @param model               model will be optimized
    * @param sampleRDD           training Samples
    * @param criterion           loss function
    * @param batchSize           mini batch size
@@ -375,60 +605,81 @@ object Optimizer {
       sampleRDD: RDD[Sample[T]],
       criterion: Criterion[T],
       batchSize: Int,
-      featurePaddingParam: PaddingParam[T],
-      labelPaddingParam: PaddingParam[T]
+      featurePaddingParam: PaddingParam[T] = null,
+      labelPaddingParam: PaddingParam[T] = null
          )(implicit ev: TensorNumeric[T]): Optimizer[T, MiniBatch[T]] = {
-    new DistriOptimizer[T](
-      _model = model,
-      dataset = (DataSet.rdd(sampleRDD) ->
-        SampleToMiniBatch(batchSize, Some(featurePaddingParam), Some(labelPaddingParam)))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]],
-      criterion = criterion
-    ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+
+    val _featurePaddingParam = if (featurePaddingParam != null) Some(featurePaddingParam) else None
+    val _labelPaddingParam = if (labelPaddingParam != null) Some(labelPaddingParam) else None
+
+    Engine.getOptimizerVersion() match {
+      case OptimizerV1 =>
+        new DistriOptimizer[T](
+          _model = model,
+          _dataset = (DataSet.rdd(sampleRDD) ->
+            SampleToMiniBatch(batchSize, _featurePaddingParam, _labelPaddingParam))
+            .toDistributed(),
+          _criterion = criterion
+        ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+      case OptimizerV2 =>
+        new DistriOptimizerV2[T](
+          _model = model,
+          _dataset = (DataSet.rdd(sampleRDD) ->
+            SampleToMiniBatch(batchSize, _featurePaddingParam, _labelPaddingParam))
+            .toDistributed(),
+          _criterion = criterion
+        ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+    }
   }
 
-  def apply[T: ClassTag](
-        model: Module[T],
-        sampleRDD: RDD[Sample[T]],
-        criterion: Criterion[T],
-        batchSize: Int,
-        featurePaddingParam: PaddingParam[T]
-      )(implicit ev: TensorNumeric[T]): Optimizer[T, MiniBatch[T]] = {
-    new DistriOptimizer[T](
-      _model = model,
-      dataset = (DataSet.rdd(sampleRDD) ->
-        SampleToMiniBatch(batchSize, Some(featurePaddingParam)))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]],
-      criterion = criterion
-    ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
-  }
 
   /**
-   * Apply an optimizer with User-Defined MiniBatch.
+   * Apply an optimizer.
+   * User can supply a customized implementation of trait MiniBatch to define
+   * how data is organize and retrieved in a mini batch.
    *
-   * @param model model will be optimizied
+   * @param model model will be optimized
    * @param sampleRDD training Samples
    * @param criterion loss function
    * @param batchSize mini batch size
-   * @param miniBatch An User-Defined MiniBatch to construct a mini batch.
-   * @return an Optimizer
+   * @param miniBatchImpl An User-Defined MiniBatch implementation
+   * @return an new Optimizer
    */
   def apply[T: ClassTag](
           model: Module[T],
           sampleRDD: RDD[Sample[T]],
           criterion: Criterion[T],
           batchSize: Int,
-          miniBatch: MiniBatch[T]
+          miniBatchImpl: MiniBatch[T]
         )(implicit ev: TensorNumeric[T]): Optimizer[T, MiniBatch[T]] = {
-    new DistriOptimizer[T](
-      _model = model,
-      dataset = (DataSet.rdd(sampleRDD) ->
-        SampleToMiniBatch(miniBatch, batchSize, None))
-        .asInstanceOf[DistributedDataSet[MiniBatch[T]]],
-      criterion = criterion
-    ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+    Engine.getOptimizerVersion() match {
+      case OptimizerV1 =>
+        new DistriOptimizer[T](
+          _model = model,
+          _dataset = (DataSet.rdd(sampleRDD) ->
+            SampleToMiniBatch(miniBatchImpl, batchSize, None))
+            .toDistributed(),
+          _criterion = criterion
+        ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+      case OptimizerV2 =>
+        new DistriOptimizerV2[T](
+          _model = model,
+          _dataset = (DataSet.rdd(sampleRDD) ->
+            SampleToMiniBatch(miniBatchImpl, batchSize, None))
+            .toDistributed(),
+          _criterion = criterion
+        ).asInstanceOf[Optimizer[T, MiniBatch[T]]]
+    }
   }
 
+  /**
+   * Apply an optimizer.
+   *
+   * @param model model will be optimizied
+   * @param dataset the input dataset - determines the type of optimizer
+   * @param criterion loss function
+   * @return an new Optimizer
+   */
   def apply[T: ClassTag, D](
     model: Module[T],
     dataset: DataSet[D],
@@ -436,19 +687,45 @@ object Optimizer {
   )(implicit ev: TensorNumeric[T]): Optimizer[T, D] = {
     dataset match {
       case d: DistributedDataSet[_] =>
-        new DistriOptimizer[T](
-          _model = model,
-          dataset = d.asInstanceOf[DistributedDataSet[MiniBatch[T]]],
-          criterion = criterion
-        ).asInstanceOf[Optimizer[T, D]]
+        Engine.getOptimizerVersion() match {
+          case OptimizerV1 =>
+            new DistriOptimizer[T](
+              _model = model,
+              _dataset = d.toDistributed().asInstanceOf[DistributedDataSet[MiniBatch[T]]],
+              _criterion = criterion
+            ).asInstanceOf[Optimizer[T, D]]
+          case OptimizerV2 =>
+            new DistriOptimizerV2[T](
+              _model = model,
+              _dataset = d.toDistributed().asInstanceOf[DistributedDataSet[MiniBatch[T]]],
+              _criterion = criterion
+            ).asInstanceOf[Optimizer[T, D]]
+        }
       case d: LocalDataSet[_] =>
         new LocalOptimizer[T](
           model = model,
-          dataset = d.asInstanceOf[LocalDataSet[MiniBatch[T]]],
+          dataset = d.toLocal().asInstanceOf[LocalDataSet[MiniBatch[T]]],
           criterion = criterion
         ).asInstanceOf[Optimizer[T, D]]
       case _ =>
         throw new UnsupportedOperationException
     }
+  }
+
+  /**
+   * find the index of type T
+   * @param parameterProcessors
+   * @return index
+   */
+  private[Optimizer] def findIndex[T <: ParameterProcessor: ClassTag](
+        parameterProcessors: ArrayBuffer[ParameterProcessor]): Int = {
+    var i = 0
+    while(i < parameterProcessors.size) {
+      if (classTag[T].runtimeClass.isInstance(parameterProcessors(i))) {
+        return i
+      }
+      i += 1
+    }
+    return -1
   }
 }

@@ -15,9 +15,13 @@ and only train a linear model on these features.
 
 ## Make sure Spark, BigDL (both scala and python api) and Tensorflow are successfully install
 
-Please refer to [BigDL](https://bigdl-project.github.io/master/), [Tensorflow](https://www.tensorflow.org/versions/r1.2/install/) for more information.
+Please refer to [BigDL](https://bigdl-project.github.io/master/), [Tensorflow](https://www.tensorflow.org/versions/r1.10/install/) for more information.
 
-We currently support Tensorflow r1.2.
+We currently support Tensorflow r1.10.
+
+```shell
+pip install tensorflow==1.10
+```
 
 ## Install the TF-slim image models library
 
@@ -142,7 +146,7 @@ $SPARK_HOME/bin/spark-submit \
 --executor-cores cores_per_executor \
 --total-executor-cores total_cores_for_the_job \
 --driver-class-path $BIGDL_HOME/lib/bigdl-$BIGDL_VERSION-jar-with-dependencies.jar \
---class com.intel.analytics.bigdl.example.tensorflow.transferLearning.TransferLearning  \
+--class com.intel.analytics.bigdl.example.tensorflow.transferlearning.TransferLearning  \
 $BIGDL_HOME/lib/bigdl-$BIGDL_VERSION-jar-with-dependencies.jar \
 -t /tmp/tf_model_train/ -v /tmp/tf_model_validation/ \
 -b batch_size -e nEpochs

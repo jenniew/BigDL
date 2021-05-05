@@ -16,13 +16,14 @@
 
 package com.intel.analytics.bigdl.transform.vision.image
 
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.tensor.{Storage, Tensor}
 import com.intel.analytics.bigdl.transform.vision.image.opencv.OpenCVMat
 import com.intel.analytics.bigdl.utils.T
 import org.apache.log4j.Logger
 
 import scala.collection.{Set, mutable}
-import scala.reflect.ClassTag
+import scala.reflect._
 
 /**
  * Each ImageFeature keeps information about single image,
@@ -118,7 +119,7 @@ class ImageFeature extends Serializable {
    */
   def getSize: (Int, Int, Int) = {
     val mat = opencvMat()
-    if (!mat.isReleased) {
+    if (mat != null && !mat.isReleased) {
       mat.shape()
     } else if (contains(ImageFeature.size)) {
       apply[(Int, Int, Int)](ImageFeature.size)
@@ -167,6 +168,11 @@ class ImageFeature extends Serializable {
   def getOriginalHeight: Int = getOriginalSize._1
 
   /**
+   * get original channel
+   */
+  def getOriginalChannel: Int = getOriginalSize._3
+
+  /**
    * get label from ImageFeature
    */
   def getLabel[T: ClassTag]: T = apply[T](ImageFeature.label)
@@ -189,6 +195,15 @@ class ImageFeature extends Serializable {
     isValid = true
   }
 
+  override def clone(): ImageFeature = {
+    val imageFeature = new ImageFeature()
+    state.foreach(x => {
+      imageFeature(x._1) = x._2
+    })
+    imageFeature.isValid = isValid
+    imageFeature
+  }
+
 
   /**
    * copy the float array to a storage
@@ -197,29 +212,110 @@ class ImageFeature extends Serializable {
    * @param floatKey key that maps float array
    * @param toRGB BGR to RGB
    */
-  def copyTo(storage: Array[Float], offset: Int, floatKey: String = ImageFeature.floats,
-             toRGB: Boolean = true): Unit = {
+  def copyTo[T: ClassTag](storage: Array[T], offset: Int, floatKey: String = ImageFeature.floats,
+    toRGB: Boolean = true, greyToRGB: Boolean = false)(implicit ev: TensorNumeric[T]): Unit = {
+    val channel = getChannel()
     require(contains(floatKey), s"there should be ${floatKey} in ImageFeature")
     val data = floats(floatKey)
-    require(data.length >= getWidth() * getHeight() * 3,
-      s"float array length should be larger than 3 * ${getWidth()} * ${getHeight()}")
+    require(data.length >= getWidth() * getHeight() * channel,
+      s"float array length should be larger than $channel * ${getWidth()} * ${getHeight()}")
     val frameLength = getWidth() * getHeight()
-    require(frameLength * 3 + offset <= storage.length)
-    var j = 0
-    if (toRGB) {
+    require(frameLength * channel + offset <= storage.length)
+    if (channel == 3) {
+      copyBGR(storage, offset, toRGB, data, frameLength)
+    } else if (!greyToRGB) {
+      copyChannels(storage, offset, channel, data, frameLength)
+    } else {
+      copyGreyToRGB(storage, offset, data, frameLength)
+    }
+  }
+
+  private def copyBGR[T: ClassTag](storage: Array[T], offset: Int, toRGB: Boolean,
+    data: Array[Float], frameLength: Int): Unit = {
+    if (classTag[T] == classTag[Float]) {
+      val storageFloat = storage.asInstanceOf[Array[Float]]
+      var j = 0
+      if (toRGB) {
+        while (j < frameLength) {
+          storageFloat(offset + j) = data(j * 3 + 2)
+          storageFloat(offset + j + frameLength) = data(j * 3 + 1)
+          storageFloat(offset + j + frameLength * 2) = data(j * 3)
+          j += 1
+        }
+      } else {
+        while (j < frameLength) {
+          storageFloat(offset + j) = data(j * 3)
+          storageFloat(offset + j + frameLength) = data(j * 3 + 1)
+          storageFloat(offset + j + frameLength * 2) = data(j * 3 + 2)
+          j += 1
+        }
+      }
+    } else if (classTag[T] == classTag[Double]) {
+      val storageDouble = storage.asInstanceOf[Array[Double]]
+      var j = 0
+      if (toRGB) {
+        while (j < frameLength) {
+          storageDouble(offset + j) = data(j * 3 + 2)
+          storageDouble(offset + j + frameLength) = data(j * 3 + 1)
+          storageDouble(offset + j + frameLength * 2) = data(j * 3)
+          j += 1
+        }
+      } else {
+        while (j < frameLength) {
+          storageDouble(offset + j) = data(j * 3)
+          storageDouble(offset + j + frameLength) = data(j * 3 + 1)
+          storageDouble(offset + j + frameLength * 2) = data(j * 3 + 2)
+          j += 1
+        }
+      }
+    }
+  }
+
+  private def copyChannels[T: ClassTag](storage: Array[T], offset: Int, channel: Int,
+    data: Array[Float], frameLength: Int): Unit = {
+    if (classTag[T] == classTag[Float]) {
+      val storageFloat = storage.asInstanceOf[Array[Float]]
+      var j = 0
       while (j < frameLength) {
-        storage(offset + j) = data(j * 3 + 2)
-        storage(offset + j + frameLength) = data(j * 3 + 1)
-        storage(offset + j + frameLength * 2) = data(j * 3)
+        var c = 0
+        while (c < channel) {
+          storageFloat(offset + j + frameLength * c) = data(j * channel + c)
+          c += 1
+        }
         j += 1
+      }
+    } else if (classTag[T] == classTag[Double]) {
+      val storageDouble = storage.asInstanceOf[Array[Double]]
+      var j = 0
+      while (j < frameLength) {
+        var c = 0
+        while (c < channel) {
+          storageDouble(offset + j + frameLength * c) = data(j * channel + c)
+          c += 1
+        }
+        j += 1
+      }
+    }
+  }
+
+  private def copyGreyToRGB[T: ClassTag](storage: Array[T], offset: Int, data: Array[Float],
+    frameLength: Int): Unit = {
+    require(offset + frameLength * 3 <= storage.length,
+      s"tensor storage cannot hold the whole image data, offset $offset " +
+        s"data length ${data.length} storage lenght ${storage.length}")
+    if (classTag[T] == classTag[Float]) {
+      val storageFloat = storage.asInstanceOf[Array[Float]]
+      var c = 0
+      while(c < 3) {
+        var i = 0
+        while(i < frameLength) {
+          storageFloat(i + c * frameLength + offset) = data(i)
+          i += 1
+        }
+        c += 1
       }
     } else {
-      while (j < frameLength) {
-        storage(offset + j) = data(j * 3)
-        storage(offset + j + frameLength) = data(j * 3 + 1)
-        storage(offset + j + frameLength * 2) = data(j * 3 + 2)
-        j += 1
-      }
+      throw new IllegalArgumentException("Not support type")
     }
   }
 
@@ -247,6 +343,17 @@ class ImageFeature extends Serializable {
       image = image.transpose(1, 3).transpose(2, 3).contiguous()
     }
     image
+  }
+
+  /**
+   * set label for imagefeature from label map
+   */
+
+  def setLabel(labelMap: mutable.Map[String, Float]): Unit = {
+    val uri = this.uri
+    if (labelMap.contains(uri)) {
+      this(ImageFeature.label) = Tensor[Float](T(labelMap(uri)))
+    }
   }
 }
 
@@ -288,6 +395,16 @@ object ImageFeature {
    * it may be used in crop/expand that may change the size of image
    */
   val boundingBox = "boundingBox"
+
+  /**
+   * key: image (and label if available) stored as Sample
+   */
+  val sample = "sample"
+
+  /**
+   * key: image pixels in Tensor
+   */
+  val imageTensor = "imageTensor"
 
   /**
    * Create ImageFeature

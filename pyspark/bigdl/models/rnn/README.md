@@ -9,7 +9,7 @@ The implementation of RNNs in this code is referred to in the [Keras Recurrent](
 
 ## Get the BigDL files
 
-Please build BigDL referring to [Build Page](https://github.com/intel-analytics/BigDL/wiki/Build-Page).
+Please build BigDL referring to [Build Page](https://bigdl-project.github.io/master/#ScalaUserGuide/install-build-src/).
 
 
 ## Prepare the Input Data
@@ -93,9 +93,43 @@ PYSPARK_DRIVER_PYTHON=./venv/bin/python PYSPARK_PYTHON=./venv.zip/venv/bin/pytho
        ${BigDL_HOME}/pyspark/bigdl/models/rnn/rnnexample.py --folder hdfs://xxx:9000/rnn/ --batchSize 12
 ```
 
-* `--folder` hdfs directory where `train.txt` and `val.txt` are located.
+* `--folder` hdfs directory where `train.txt` and `val.txt` are located. the default value is /tmp/rnn.
+* `--batchSize` option can be used to set batch size, the default value is 12.
+* `--hiddenSize` hidden unit size in the rnn cell, the default value is 40.
+* `--vocabSize` vocabulary size, the default value is 4000.
+* `--learningRate` inital learning rate, the default value is 0.1.
+* `--weightDecay` weight decay, the default value is 0.
+* `--momentum` momentum, the default value is 0.
+* `--dampening` dampening for momentum, the default value is 0.
+* `--maxEpoch` max number of epochs to train, the default value is 30.
 
-* `--batchSize` option can be used to set batch size, the default value is 128.
+##### In order to use MKL-DNN as the backend, you should:
+1. Define a graph model with Model or convert a sequential model to a graph model using:
+   ```
+   convertedModel = sequentialModel.to_graph()
+   ```
+2. Specify the input and output formats of it.
+   For example:
+   ```
+   theDefinedModel.set_input_formats([theInputFormatIndex])
+   theDefinedModel.set_output_formats([theOutputFormatIndex])
+   ```
+   BigDL needs these format information to build a graph running with MKL-DNN backend.
+   
+   The format index of input or output format can be checked
+   in: 
+   ```
+   ${BigDL-core}/native-dnn/src/main/java/com/intel/analytics/bigdl/mkl/Memory.java
+   
+   For instance:
+   public static final int ntc = 27;
+   means the index of format ntc is 27.
+   ```
+3. Run spark-submit command with correct configurations
+   ```
+   --conf "spark.driver.extraJavaOptions=-Dbigdl.engineType=mkldnn"
+   --conf "spark.executor.extraJavaOptions=-Dbigdl.engineType=mkldnn"
+   ```
 
 ## Expected Training Output
 Users can see the Loss of the model printed by the program. The Loss, in this case, is the perplexity of the language model. The lower, the better.

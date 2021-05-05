@@ -22,14 +22,10 @@ import com.intel.analytics.bigdl.models.Inception
 import com.intel.analytics.bigdl.models.resnet.ResNet
 import com.intel.analytics.bigdl.models.resnet.ResNet.{DatasetType, ShortcutType}
 import com.intel.analytics.bigdl.nn._
-import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.RandomGenerator.RNG
 import org.scalatest.{FlatSpec, Matchers}
-import com.intel.analytics.bigdl.nn.Graph.ModuleNode
 import com.intel.analytics.bigdl.numeric.NumericFloat
-import com.intel.analytics.bigdl.tensor.{Storage, Tensor}
-import com.intel.analytics.bigdl.utils.{RandomGenerator, T, Table}
-import spire.syntax.module
+import com.intel.analytics.bigdl.tensor.Tensor
 
 import scala.util.Random
 
@@ -84,10 +80,10 @@ class GraphNodeSpec extends FlatSpec with Matchers {
     val seed = modelSeed
     RNG.setSeed(seed)
     val model = ResNet(classNum, T("shortcutType" -> ShortcutType.B,
-      "depth" -> depth, "dataset" -> DatasetType.ImageNet))
+      "depth" -> depth, "dataSet" -> DatasetType.ImageNet))
     RNG.setSeed(seed)
     val model2 = ResNet(classNum, T("shortcutType" -> ShortcutType.B,
-      "depth" -> depth, "dataset" -> DatasetType.ImageNet))
+      "depth" -> depth, "dataSet" -> DatasetType.ImageNet))
 
     val (weights, grad) = model.getParameters()
     val (w, g) = model2.getParameters()

@@ -22,7 +22,7 @@ import com.intel.analytics.bigdl.dataset.{DataSet, SampleToMiniBatch}
 import com.intel.analytics.bigdl.nn.{CrossEntropyCriterion, Module, TimeDistributedCriterion}
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric._
-import com.intel.analytics.bigdl.utils.Engine
+import com.intel.analytics.bigdl.utils.{Engine, OptimizerV1, OptimizerV2}
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkContext
 import com.intel.analytics.bigdl.example.languagemodel.Utils._
@@ -66,15 +66,27 @@ object PTBWordLM {
 
       val model = if (param.modelSnapshot.isDefined) {
         Module.loadModule[Float](param.modelSnapshot.get)
-      } else {
-        val curModel = PTBModel(
+      } else if (param.withTransformerModel) {
+        PTBModel.transformer(
           inputSize = param.vocabSize,
           hiddenSize = param.hiddenSize,
           outputSize = param.vocabSize,
           numLayers = param.numLayers,
           keepProb = param.keepProb)
-        curModel.reset()
-        curModel
+      } else {
+        PTBModel.lstm(
+          inputSize = param.vocabSize,
+          hiddenSize = param.hiddenSize,
+          outputSize = param.vocabSize,
+          numLayers = param.numLayers,
+          keepProb = param.keepProb)
+      }
+
+      if (param.optimizerVersion.isDefined) {
+        param.optimizerVersion.get.toLowerCase match {
+          case "optimizerv1" => Engine.setOptimizerVersion(OptimizerV1)
+          case "optimizerv2" => Engine.setOptimizerVersion(OptimizerV2)
+        }
       }
 
       val optimMethod = if (param.stateSnapshot.isDefined) {

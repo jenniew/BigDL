@@ -16,19 +16,19 @@ python model.py
 
 2. Freeze tensorflow model
 ```bash
-wget https://raw.githubusercontent.com/tensorflow/tensorflow/v1.0.0/tensorflow/python/tools/freeze_graph.py
+wget https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/tools/freeze_graph.py
 python freeze_graph.py --input_graph model/model.pbtxt --input_checkpoint model/model.chkp --output_node_names="LeNet/fc4/BiasAdd" --output_graph "model.pb"
 ```
 
 3. Run BigDL
 ```bash
-spark-submit --master local[1] --class com.intel.analytics.bigdl.example.tensorflow.Load BigDL_jar_file ./model.pb
+spark-submit --master local[1] --class com.intel.analytics.bigdl.example.tensorflow.loadandsave.Load BigDL_jar_file ./model.pb
 ```
 
 ## Save BigDL model as tensorflow model
 1. Run BigDL
 ```bash
-spark-submit --master local[1] --class com.intel.analytics.bigdl.example.tensorflow.Save BigDL_jar_file
+spark-submit --master local[1] --class com.intel.analytics.bigdl.example.tensorflow.loadandsave.Save BigDL_jar_file
 ```
 
 2. Generate summary file, you can find the dump_tf_graph.py in the bin folder of the dist package, or script folder of

@@ -15,7 +15,7 @@
 #
 
 from optparse import OptionParser
-from bigdl.dataset import mnist
+from bigdl.models.lenet.utils import *
 from bigdl.dataset.transformer import *
 from bigdl.nn.layer import *
 from bigdl.nn.criterion import *
@@ -29,32 +29,26 @@ def build_model(class_num):
     model.add(SpatialConvolution(1, 6, 5, 5))
     model.add(Tanh())
     model.add(SpatialMaxPooling(2, 2, 2, 2))
-    model.add(Tanh())
     model.add(SpatialConvolution(6, 12, 5, 5))
+    model.add(Tanh())
     model.add(SpatialMaxPooling(2, 2, 2, 2))
     model.add(Reshape([12 * 4 * 4]))
     model.add(Linear(12 * 4 * 4, 100))
     model.add(Tanh())
     model.add(Linear(100, class_num))
     model.add(LogSoftMax())
+
+    # To use MKL-DNN backend, the model has to be a graph model with input and output formats set.
+    # Sequential model cannot be used in this case, so we convert it to a graph model.
+    if get_bigdl_engine_type() == "MklDnn":
+        model = model.to_graph()
+
+        # The format index of input or output format can be checked
+        # in: ${BigDL-core}/native-dnn/src/main/java/com/intel/analytics/bigdl/mkl/Memory.java
+        model.set_input_formats([7]) # Set input format to nchw
+        model.set_output_formats([4]) # Set output format to nc
+
     return model
-
-
-def get_mnist(sc, data_type="train", location="/tmp/mnist"):
-    """
-    Get and normalize the mnist data. We would download it automatically
-    if the data doesn't present at the specific location.
-
-    :param sc: SparkContext
-    :param data_type: training data or testing data
-    :param location: Location storing the mnist
-    :return: A RDD of (features: Ndarray, label: Ndarray)
-    """
-    (images, labels) = mnist.read_data_sets(location, data_type)
-    images = sc.parallelize(images)
-    labels = sc.parallelize(labels + 1) # Target start from 1 in BigDL
-    record = images.zip(labels)
-    return record
 
 
 if __name__ == "__main__":
@@ -66,6 +60,7 @@ if __name__ == "__main__":
     parser.add_option("-t", "--endTriggerType", dest="endTriggerType", default="epoch")
     parser.add_option("-n", "--endTriggerNum", type=int, dest="endTriggerNum", default="20")
     parser.add_option("-d", "--dataPath", dest="dataPath", default="/tmp/mnist")
+    parser.add_option("--optimizerVersion", dest="optimizerVersion", default="optimizerV1")
 
     (options, args) = parser.parse_args(sys.argv)
 
@@ -74,41 +69,35 @@ if __name__ == "__main__":
     show_bigdl_info_logs()
     init_engine()
 
-    if options.action == "train":
-        def get_end_trigger():
-            if options.endTriggerType.lower() == "epoch":
-                return MaxEpoch(options.endTriggerNum)
-            else:
-                return MaxIteration(options.endTriggerNum)
+    set_optimizer_version(options.optimizerVersion)
 
-        train_data = get_mnist(sc, "train", options.dataPath)\
-            .map(lambda rec_tuple: (normalizer(rec_tuple[0], mnist.TRAIN_MEAN, mnist.TRAIN_STD),
-                               rec_tuple[1]))\
-            .map(lambda t: Sample.from_ndarray(t[0], t[1]))
-        test_data = get_mnist(sc, "test", options.dataPath)\
-            .map(lambda rec_tuple: (normalizer(rec_tuple[0], mnist.TEST_MEAN, mnist.TEST_STD),
-                               rec_tuple[1]))\
-            .map(lambda t: Sample.from_ndarray(t[0], t[1]))
+    # In order to use MklDnn as the backend, you should:
+    # 1. Define a graph model with Model(graph container) or convert a sequential model to a graph model
+    # 2. Specify the input and output formats of it.
+    #    BigDL needs these format information to build a graph running with MKL-DNN backend
+    # 3. Run spark-submit command with correct configurations
+    #    --conf "spark.driver.extraJavaOptions=-Dbigdl.engineType=mkldnn"
+    #    --conf "spark.executor.extraJavaOptions=-Dbigdl.engineType=mkldnn"
+
+    if options.action == "train":
+        (train_data, test_data) = preprocess_mnist(sc, options)
+
         optimizer = Optimizer(
             model=build_model(10),
             training_rdd=train_data,
             criterion=ClassNLLCriterion(),
             optim_method=SGD(learningrate=0.01, learningrate_decay=0.0002),
-            end_trigger=get_end_trigger(),
+            end_trigger=get_end_trigger(options),
             batch_size=options.batchSize)
-        optimizer.set_validation(
-            batch_size=options.batchSize,
-            val_rdd=test_data,
-            trigger=EveryEpoch(),
-            val_method=[Top1Accuracy()]
-        )
-        optimizer.set_checkpoint(EveryEpoch(), options.checkpointPath)
+        validate_optimizer(optimizer, test_data, options)
         trained_model = optimizer.optimize()
         parameters = trained_model.parameters()
     elif options.action == "test":
         # Load a pre-trained model and then validate it through top1 accuracy.
-        test_data = get_mnist(sc, "test").map(
-            normalizer(mnist.TEST_MEAN, mnist.TEST_STD))
+        test_data = get_mnist(sc, "test", options.dataPath) \
+            .map(lambda rec_tuple: (normalizer(rec_tuple[0], mnist.TEST_MEAN, mnist.TEST_STD),
+                                    rec_tuple[1])) \
+            .map(lambda t: Sample.from_ndarray(t[0], t[1]))
         model = Model.load(options.modelPath)
         results = model.evaluate(test_data, options.batchSize, [Top1Accuracy()])
         for result in results:

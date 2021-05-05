@@ -41,7 +41,16 @@ object VariableFormat {
    * The default VariableFormat used when we do not care about
    * the specified format of this variable.
    */
-  case object Default extends VariableFormat
+  case object Default extends VariableFormat {
+    override def getFanIn(shape: Array[Int]): Int = {
+      shape.product
+    }
+
+    override def getFanOut(shape: Array[Int]): Int = {
+      shape.product
+    }
+
+  }
 
   case object ONE_D extends VariableFormat {
     override def getFanIn(shape: Array[Int]): Int = {
@@ -143,7 +152,6 @@ object VariableFormat {
       shape(3) * receptiveFieldSize
     }
   }
-
 }
 
 /**
@@ -270,12 +278,23 @@ case class ConstInitMethod(value: Double) extends InitializationMethod {
  *  (http://jmlr.org/proceedings/papers/v9/glorot10a/glorot10a.pdf)
  */
 case object Xavier extends InitializationMethod {
+  private var varianceNormAverage: Boolean = true
+
+  def setVarianceNormAverage(v: Boolean): this.type = {
+    varianceNormAverage = v
+    this
+  }
+
   def init[T](variable: Tensor[T], dataFormat: VariableFormat)
              (implicit ev: TensorNumeric[T]): Unit = {
     val shape = variable.size()
     val fanIn = dataFormat.getFanIn(shape)
     val fanOut = dataFormat.getFanOut(shape)
-    val stdv = math.sqrt(6.0 / (fanIn + fanOut))
+    val stdv = if (!varianceNormAverage) {
+      math.sqrt(3.0 / fanIn)
+    } else {
+      math.sqrt(6.0 / (fanIn + fanOut))
+    }
     variable.rand(-stdv, stdv)
   }
 

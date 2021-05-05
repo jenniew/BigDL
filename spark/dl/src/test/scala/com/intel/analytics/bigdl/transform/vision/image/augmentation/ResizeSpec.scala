@@ -17,7 +17,7 @@
 package com.intel.analytics.bigdl.transform.vision.image.augmentation
 
 import com.intel.analytics.bigdl.transform.vision.image.opencv.OpenCVMat
-import com.intel.analytics.bigdl.transform.vision.image.{BytesToMat, ImageFrame, LocalImageFrame}
+import com.intel.analytics.bigdl.transform.vision.image.{BytesToMat, ImageFeature, ImageFrame, LocalImageFrame}
 import org.opencv.imgcodecs.Imgcodecs
 import org.scalatest.{FlatSpec, Matchers}
 
@@ -26,6 +26,19 @@ class ResizeSpec extends FlatSpec with Matchers {
   "resize" should "work properly" in {
     val data = ImageFrame.read(resource.getFile)
     val transformer = Resize(300, 300)
+    val transformed = transformer(data)
+    val imageFeature = transformed.asInstanceOf[LocalImageFrame].array(0)
+    imageFeature.getHeight() should be(300)
+    imageFeature.getWidth() should be(300)
+
+    val tmpFile = java.io.File.createTempFile("module", ".jpg")
+    Imgcodecs.imwrite(tmpFile.toString, imageFeature.opencvMat())
+    println(tmpFile)
+  }
+
+  "resize useScaleFactor false" should "work properly" in {
+    val data = ImageFrame.read(resource.getFile)
+    val transformer = Resize(300, 300, useScaleFactor = false)
     val transformed = transformer(data)
     val imageFeature = transformed.asInstanceOf[LocalImageFrame].array(0)
     imageFeature.getHeight() should be(300)
@@ -64,5 +77,14 @@ class ResizeSpec extends FlatSpec with Matchers {
     val (height, width) = AspectScale.getHeightWidthAfterRatioScale(img, 600, 1000, 1)
     height should be (600)
     width should be (800)
+  }
+
+  "scaleResize without roi" should "be ok" in {
+    val data = ImageFrame.read(resource.getFile)
+    val transformer = ScaleResize(minSize = 100, maxSize = 120, resizeROI = false)
+    val transformed = transformer(data)
+    val imageFeature = transformed.asInstanceOf[LocalImageFrame].array(0)
+    imageFeature.getHeight() should be(90)
+    imageFeature.getWidth() should be(120)
   }
 }

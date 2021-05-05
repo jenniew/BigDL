@@ -18,6 +18,7 @@ import pytest
 import os
 from bigdl.util.common import *
 from bigdl.transform.vision.image import *
+import tempfile
 
 
 class TestLayer():
@@ -38,17 +39,23 @@ class TestLayer():
         """
         self.sc.stop()
 
+    def test_get_sample(self):
+        image_frame = ImageFrame.read(self.image_path)
+        transformer = Pipeline([PixelBytesToMat(), Resize(256, 256), CenterCrop(224, 224),
+                                ChannelNormalize(0.485, 0.456, 0.406, 0.229, 0.224, 0.225),
+                                MatToTensor(), ImageFrameToSample()])
+        transformed = transformer(image_frame)
+        transformed.get_sample()
+
     def transformer_test(self, transformer):
         image_frame = ImageFrame.read(self.image_path)
-        transformer(image_frame)
-        image_frame.transform(transformer)
-        image_frame.to_sample()
+        transformed = transformer(image_frame)
+        transformed.get_image()
 
         image_frame = ImageFrame.read(self.image_path, self.sc)
-        transformer(image_frame)
-        image_frame.transform(transformer)
-        sample = image_frame.to_sample()
-        sample.count()
+        transformed = transformer(image_frame)
+        images = transformed.get_image()
+        images.count()
 
     def test_get_image(self):
         image_frame = ImageFrame.read(self.image_path)
@@ -57,10 +64,6 @@ class TestLayer():
     def test_get_label(self):
         image_frame = ImageFrame.read(self.image_path)
         image_frame.get_label()
-
-    def test_to_sample(self):
-        image_frame = ImageFrame.read(self.image_path)
-        image_frame.to_sample()
 
     def test_is_local(self):
         image_frame = ImageFrame.read(self.image_path)
@@ -148,12 +151,88 @@ class TestLayer():
                         max_expand_ratio=2.0)
         self.transformer_test(expand)
 
+    def test_fix_expand(self):
+        expand = FixExpand(1000, 1000)
+        self.transformer_test(expand)
+
     def test_random_transformer(self):
         transformer = RandomTransformer(HFlip(), 0.5)
         self.transformer_test(transformer)
 
     def test_pipeline(self):
         transformer = Pipeline([ColorJitter(), HFlip(), Resize(200, 200, 1)])
+        self.transformer_test(transformer)
+
+    def test_inception_preprocess(self):
+        transformer = Pipeline([Resize(256, 256), CenterCrop(224, 224),
+                                ChannelNormalize(0.485, 0.456, 0.406, 0.229, 0.224, 0.225),
+                                MatToTensor(), ImageFrameToSample()])
+        self.transformer_test(transformer)
+
+    def test_mat_to_floats(self):
+        transformer = MatToFloats()
+        self.transformer_test(transformer)
+
+    def test_mat_to_floats_no_share(self):
+        transformer = MatToFloats(share_buffer=False)
+        self.transformer_test(transformer)
+
+    def test_mat_to_tensor(self):
+        transformer = MatToTensor()
+        self.transformer_test(transformer)
+
+    def testImageFrameToSample(self):
+        transformer = Pipeline([MatToTensor(), ImageFrameToSample()])
+        self.transformer_test(transformer)
+
+    def test_image_frame_transform(self):
+        transformer = MatToTensor()
+        image_frame = ImageFrame.read(self.image_path)
+        transformed = image_frame.transform(transformer)
+        transformed.get_image()
+
+    def test_empty_get_predict_local(self):
+        image_frame = ImageFrame.read(self.image_path)
+        image_frame.get_predict()
+
+    def test_empty_get_predict_distributed(self):
+        image_frame = ImageFrame.read(self.image_path, self.sc)
+        image_frame.get_predict()
+
+    def test_read_write_parquet(self):
+        temp = tempfile.mkdtemp() + "testParquet/"
+        resource_path = os.path.join(os.path.split(__file__)[0], "../resources/pascal")
+        ImageFrame.write_parquet(resource_path, temp, self.sc, 1)
+        read_image_frame = ImageFrame.read_parquet(temp, self.sc)
+
+    def test_set_label(self):
+        resource_path = os.path.join(os.path.split(__file__)[0], "../resources/pascal")
+        imageFrame = ImageFrame.read(resource_path, self.sc)
+        uris = imageFrame.get_uri().collect()
+        label = {}
+        for uri in uris:
+            label[uri] = 10
+        imageFrame.set_label(label)
+
+    def test_random_split(self):
+        resource_path = os.path.join(os.path.split(__file__)[0], "../resources/pascal")
+        imageFrame = ImageFrame.read(resource_path, self.sc)
+        splits = imageFrame.random_split([1.0])
+
+    def test_channel_scaled_normalizer(self):
+        transformer = ChannelScaledNormalizer(123, 117, 104, 1.0)
+        self.transformer_test(transformer)
+
+    def test_random_alter_aspect(self):
+        transformer = RandomAlterAspect(0.08, 1, 0.75, "CUBIC", 20)
+        self.transformer_test(transformer)
+
+    def test_random_cropper(self):
+        transformer = RandomCropper(20, 20, True, "Random", 3)
+        self.transformer_test(transformer)
+
+    def test_random_resize(self):
+        transformer = RandomResize(100, 100)
         self.transformer_test(transformer)
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@
 
 package com.intel.analytics.bigdl.nn.tf
 
-import com.intel.analytics.bigdl.nn.Log
 import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
@@ -29,6 +28,10 @@ import scala.reflect.ClassTag
 @SerialVersionUID(952324213749625368L)
 class Log1p[T: ClassTag, D: ClassTag] (implicit ev: TensorNumeric[T], ev2: TensorNumeric[D])
   extends AbstractModule[Tensor[D], Tensor[D], T] {
+
+  output = Tensor[D]()
+  gradInput = Tensor[D]()
+
   private val buffer: Tensor[D] = Tensor[D]()
   override def updateOutput(input: Tensor[D]): Tensor[D] = {
     output.resizeAs(input)
@@ -45,6 +48,11 @@ class Log1p[T: ClassTag, D: ClassTag] (implicit ev: TensorNumeric[T], ev2: Tenso
       .cmul(gradOutput)
 
     gradInput
+  }
+
+  override def getClassTagNumerics() : (Array[ClassTag[_]], Array[TensorNumeric[_]]) = {
+    (Array[ClassTag[_]](scala.reflect.classTag[T], scala.reflect.classTag[D]),
+      Array[TensorNumeric[_]](ev, ev2))
   }
 }
 

@@ -29,6 +29,7 @@ import scopt.OptionParser
 
 import scala.io.Source
 import scala.language.existentials
+import scala.reflect.ClassTag
 import scala.util.control.Breaks._
 
 object Utils {
@@ -154,13 +155,15 @@ object Utils {
     labelRDD: RDD[Array[Float]],
     sentenceRDD: RDD[Array[Int]]
   ): RDD[Sample[Float]] = {
-    def indexAndSort(rdd: RDD[_]) = rdd.zipWithIndex.map(_.swap).sortByKey()
+    def indexAndSort[D: ClassTag, P <: Product2[Long, D]](rdd: RDD[D]) = {
+      rdd.zipWithIndex.map(r => r.swap).sortByKey()
+    }
 
     indexAndSort(sentenceRDD)
       .join(indexAndSort(labelRDD))
       .join(indexAndSort(treeRDD))
       .values
-      .map { case ((input: Array[Int], label: Array[Float]), tree: Tensor[Float]) =>
+      .map{ case ((input, label), tree) =>
         Sample(
           featureTensors =
             Array(Tensor(input.map(_.toFloat), Array(input.length, 1)),
@@ -231,15 +234,19 @@ object Utils {
     opt[String]('e', "epoch")
       .text("max epoch")
       .action((x, c) => c.copy(epoch = x.toInt))
+    opt[String]("optimizerVersion")
+      .text("state optimizer version")
+      .action((x, c) => c.copy(optimizerVersion = Some(x)))
   }
 
   case class TreeLSTMSentimentParam (
     override val baseDir: String = "/tmp/.bigdl/dataset/",
     override val batchSize: Int = 128,
     hiddenSize: Int = 250,
-    learningRate: Double = 0.05,
+    override val learningRate: Double = 0.05,
     regRate: Double = 1e-4,
     p: Double = 0.5,
-    epoch: Int = 5
+    epoch: Int = 5,
+    optimizerVersion: Option[String] = None
   ) extends AbstractTextClassificationParams
 }

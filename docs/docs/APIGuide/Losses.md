@@ -13,6 +13,9 @@ Compute L1 norm for input, and sign of input
 
 **Scala example:**
 ```scala
+import com.intel.analytics.bigdl.nn.L1Cost
+import com.intel.analytics.bigdl.tensor.Tensor
+
 val layer = L1Cost[Float]()
 val input = Tensor[Float](2, 2).rand
 val target = Tensor[Float](2, 2).rand
@@ -389,7 +392,7 @@ val target = Tensor(Storage(Array(2.0f, 4.0f, 2.0f, 4.0f, 1.0f, 2.0f))).resize(1
 val model = SoftmaxWithCriterion[Float]()
 val output = model.forward(input, target)
 
-scala> print(input)
+> print(input)
 (1,1,.,.) =
 0.65131104	0.9332143	0.5618989	
 0.9965054	0.9370902	0.108070895	
@@ -412,7 +415,7 @@ scala> print(input)
 
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 1x5x2x3]
 
-scala> print(output)
+> print(output)
 1.6689054
 ```
 **Python example:**
@@ -582,6 +585,10 @@ prevents exploding gradients (e.g. see "Fast R-CNN" paper by Ross Girshick).
 
 **Scala example:**
 ```scala
+import com.intel.analytics.bigdl.tensor.{Tensor, Storage}
+import com.intel.analytics.bigdl.nn.SmoothL1CriterionWithWeights
+import com.intel.analytics.bigdl.utils.T
+
 val smcod = SmoothL1CriterionWithWeights[Float](2.4f, 2)
 
 val inputArr = Array(1.1, -0.8, 0.1, 0.4, 1.3, 0.2, 0.2, 0.03)
@@ -648,7 +655,7 @@ MultiMarginCriterion is a loss function that optimizes a multi-class classificat
 **Scala example:**
 ```scala
 
-scala>
+
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.tensor._
@@ -660,22 +667,22 @@ val loss = MultiMarginCriterion(1)
 val output = loss.forward(input,target)
 val grad = loss.backward(input,target)
 
-scala> print(input)
+> print(input)
 -0.45896783     -0.80141246
 0.22560088      -0.13517438
 0.2601126       0.35492152
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 3x2]
 
-scala> print(target)
+> print(target)
 2.0
 1.0
 2.0
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 3]
 
-scala> print(output)
+> print(output)
 0.4811434
 
-scala> print(grad)
+> print(grad)
 0.16666667      -0.16666667
 -0.16666667     0.16666667
 0.16666667      -0.16666667
@@ -816,23 +823,27 @@ Creates a criterion that optimizes a two-class classification (squared) hinge lo
 
 **Scala example:**
 ```scala
+import com.intel.analytics.bigdl.nn.MarginCriterion
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+
 val criterion = MarginCriterion(margin=1.0, sizeAverage=true)
 
-val input = Tensor(3, 2).rand()
+> val input = Tensor(3, 2).rand()
 input: com.intel.analytics.bigdl.tensor.Tensor[Float] =
 0.33753583      0.3575501
 0.23477706      0.7240361
 0.92835575      0.4737949
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 3x2]
 
-val target = Tensor(3, 2).rand()
+> val target = Tensor(3, 2).rand()
 target: com.intel.analytics.bigdl.tensor.Tensor[Float] =
 0.27280563      0.7022703
 0.3348442       0.43332106
 0.08935371      0.17876455
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 3x2]
 
-criterion.forward(input, target)
+> criterion.forward(input, target)
 res5: Float = 0.84946966
 ```
 
@@ -871,7 +882,7 @@ a table of two Tensors, and a Tensor label y with values 1 or -1.
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.tensor._
-impot com.intel.analytics.bigdl.utils.T
+import com.intel.analytics.bigdl.utils.T
 val cosineEmbeddingCriterion = CosineEmbeddingCriterion(0.0, false)
 val input1 = Tensor(5).rand()
 val input2 = Tensor(5).rand()
@@ -955,6 +966,8 @@ criterion = BCECriterion()
 
 **Scala example:**
 ```scala
+import com.intel.analytics.bigdl.nn.BCECriterion
+import com.intel.analytics.bigdl.tensor.Tensor
 
 val criterion = BCECriterion[Float]()
 val input = Tensor[Float](3, 1).rand
@@ -1022,8 +1035,6 @@ Both `forward` and `backward` accept two tensors : input and target. The `forwar
 
 **Scala example:**
 ```scala
-
-scala>
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.tensor._
@@ -1035,20 +1046,20 @@ val loss = DiceCoefficientCriterion(epsilon = 1.0f)
 val output = loss.forward(input,target)
 val grad = loss.backward(input,target)
 
-scala> print(input)
+> print(input)
 -0.50278
 0.51387966
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 2]
 
-scala> print(target)
+> print(target)
 2.0
 1.0
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 2]
 
-scala> print(output)
+> print(output)
 0.9958517
 
-scala> print(grad)
+> print(grad)
 -0.99619853     -0.49758217
 [com.intel.analytics.bigdl.tensor.DenseTensor of size 1x2]
 
@@ -1236,8 +1247,6 @@ DistKLDivCriterion is the Kullback–Leibler divergence loss.
 
 **Scala example:**
 ```scala
-
-scala>
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.tensor._
@@ -1249,20 +1258,20 @@ val loss = DistKLDivCriterion()
 val output = loss.forward(input,target)
 val grad = loss.backward(input,target)
 
-scala> print(input)
+> print(input)
 -0.3854126
 -0.7707398
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 2]
 
-scala> print(target)
+> print(target)
 2.0
 1.0
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 2]
 
-scala> print(output)
+> print(output)
 1.4639297
 
-scala> print(grad)
+> print(grad)
 -1.0
 -0.5
 [com.intel.analytics.bigdl.tensor.DenseTensor of size 2]
@@ -1504,8 +1513,8 @@ val pc = ParallelCriterion()
 
 val input = T(Tensor(2, 10), Tensor(2, 10))
 var i = 0
-input[Tensor](1).apply1(_ => {i += 1; i})
-input[Tensor](2).apply1(_ => {i -= 1; i})
+input[Tensor[Float]](1).apply1(_ => {i += 1; i})
+input[Tensor[Float]](2).apply1(_ => {i -= 1; i})
 val target = T(Tensor(Storage(Array(1.0f, 8.0f))), Tensor(2, 10).fill(1.0f))
 
 val nll = ClassNLLCriterion()
@@ -1732,7 +1741,7 @@ val input = Tensor(T(1.0f, 2.0f, 3.0f))
 val target = Tensor(T(4.0f, 5.0f, 6.0f))
 val output = criterion.forward(input, target)
 
-scala> print(output)
+> print(output)
 3.0
 ```
 
@@ -1890,7 +1899,13 @@ val criterion = KLDCriterion()
 criterion = KLDCriterion()
 ```
 
-Computes the KL-divergence of the Gaussian distribution.
+Computes the KL-divergence of the input normal distribution to a standard normal distribution.
+The input has to be a table. The first element of input is the mean of the distribution,
+the second element of input is the log_variance of the distribution. The input distribution is
+assumed to be diagonal.
+
+The mean and log_variance are both assumed to be two dimensional tensors. The first dimension are
+interpreted as batch. The output is the average/sum of each observation
 
 **Scala example:**
 ```scala
@@ -1911,7 +1926,7 @@ val target = Tensor[Float](2, 3).range(2, 13, 2)
 val loss = criterion.forward(input, target)
 
 > loss
-loss: Float = 34562.04
+loss: Float = 34647.04
 ```
 
 **Python example:**
@@ -1935,7 +1950,7 @@ target = target.reshape(2, 3)
 loss = criterion.forward(input, target)
 
 > loss
-34562.04
+34647.04
 ```
 
 ## CosineProximityCriterion ##
@@ -1986,4 +2001,516 @@ loss = criterion.forward(input, target)
 
 > loss
 -0.3333333
+```
+
+## MeanSquaredLogarithmicCriterion ##
+**Scala:**
+```scala
+val criterion = MeanSquaredLogarithmicCriterion()
+```
+**Python:**
+```python
+criterion = MeanSquaredLogarithmicCriterion()
+```
+
+compute mean squared logarithmic error for input and target
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn.MeanSquaredLogarithmicCriterion
+import com.intel.analytics.bigdl.utils.T
+
+val criterion = MeanSquaredLogarithmicCriterion()
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+val loss = criterion.forward(input, target)
+
+> loss
+loss: Float = 0.30576965
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = MeanSquaredLogarithmicCriterion()
+
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+loss = criterion.forward(input, target)
+
+> loss
+0.30576965
+```
+
+## MeanAbsolutePercentageCriterion ##
+**Scala:**
+```scala
+val criterion = MeanAbsolutePercentageCriterion()
+```
+**Python:**
+```python
+criterion = MeanAbsolutePercentageCriterion()
+```
+
+compute mean absolute percentage error for intput and target
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn.MeanAbsolutePercentageCriterion
+import com.intel.analytics.bigdl.utils.T
+
+val criterion = MeanAbsolutePercentageCriterion()
+
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+val loss = criterion.forward(input, target)
+
+> loss
+loss: Float = 50.0
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = MeanAbsolutePercentageCriterion()
+
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+loss = criterion.forward(input, target)
+
+> loss
+50.0
+```
+
+
+## KullbackLeiblerDivergenceCriterion ##
+**Scala:**
+```scala
+val criterion = KullbackLeiblerDivergenceCriterion()
+```
+**Python:**
+```python
+criterion = KullbackLeiblerDivergenceCriterion()
+```
+
+compute Kullback Leibler Divergence Criterion error for intput and target
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn.KullbackLeiblerDivergenceCriterion
+import com.intel.analytics.bigdl.utils.T
+
+val criterion = KullbackLeiblerDivergenceCriterion[Float]()
+val input = Tensor[Float](Array(0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f), Array(2, 3))
+val target = Tensor[Float](Array(0.6f, 0.5f, 0.4f, 0.3f, 0.2f, 0.1f), Array(2, 3))
+val loss = criterion.forward(input, target)
+
+> loss
+loss: Float = 0.59976757
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = KullbackLeiblerDivergenceCriterion()
+
+y_pred = np.matrix('0.1 0.2 0.3; 0.4 0.5 0.6')
+y_true = np.matrix('0.6 0.5 0.4; 0.3 0.2 0.1')
+
+loss = criterion.forward(y_pred, y_true)
+
+> loss
+0.59976757
+```
+
+## PoissonCriterion ##
+**Scala:**
+```scala
+val criterion = PoissonCriterion()
+```
+**Python:**
+```python
+criterion = PoissonCriterion()
+```
+
+compute Poisson error for intput and target
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn.PoissonCriterion
+import com.intel.analytics.bigdl.utils.T
+
+val criterion = PoissonCriterion()
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+val loss = criterion.forward(input, target)
+
+> loss
+loss = -6.1750183
+
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = PoissonCriterion()
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+loss = criterion.forward(input, target)
+
+> loss
+-6.1750183
+```
+
+
+## TransformerCriterion ##
+**Scala:**
+```scala
+val criterion = TransformerCriterion(criterion, Some(inputTransformer), Some(targetTransformer))
+```
+**Python:**
+```python
+criterion = TransformerCriterion(criterion, input_transformer, targetTransformer)
+```
+
+The criterion that takes two modules (optional) to transform input and target, and take
+one criterion to compute the loss with the transformed input and target.
+
+This criterion can be used to construct complex criterion. For example, the
+`inputTransformer` and `targetTransformer` can be pre-trained CNN networks,
+and we can use the networks' output to compute the high-level feature
+reconstruction loss, which is commonly used in areas like neural style transfer
+(https://arxiv.org/abs/1508.06576), texture synthesis (https://arxiv.org/abs/1505.07376),
+.etc.
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn.TransformerCriterion
+import com.intel.analytics.bigdl.utils.T
+
+val criterion = MSECriterion()
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+val inputTransformer = Identity()
+val targetTransformer = Identity()
+val transCriterion = TransformerCriterion(criterion,
+     Some(inputTransformer), Some(targetTransformer))
+val loss = transCriterion.forward(input, target)
+
+> loss
+15.166667
+
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = MSECriterion()
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+inputTransformer = Identity()
+targetTransformer = Identity()
+transCriterion = TransformerCriterion(criterion, inputTransformer, targetTransformer)
+loss = transCriterion.forward(input, target)
+
+
+> loss
+15.166667
+```
+
+## DotProductCriterion ##
+**Scala:**
+```scala
+val criterion = DotProductCriterion(sizeAverage=false)
+```
+**Python:**
+```python
+criterion = DotProductCriterion(sizeAverage=False)
+```
+
+Compute the dot product of input and target tensor.
+Input and target are required to have the same size.
+
+* sizeAverage:  whether to average over each observations in the same batch
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+
+val criterion = DotProductCriterion()
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+
+val loss = criterion.forward(input, target)
+
+> loss
+182.0
+
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = DotProductCriterion()
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+loss = criterion.forward(input, target)
+
+
+> loss
+182.0
+```
+
+## PGCriterion ##
+**Scala:**
+```scala
+val criterion = PGCriterion(sizeAverage=false)
+```
+**Python:**
+```python
+criterion = PGCriterion(sizeAverage=False)
+```
+
+The Criterion to compute the negative policy gradient given a
+multinomial distribution and the sampled action and reward.
+
+The input to this criterion should be a 2-D tensor representing
+a batch of multinomial distribution, the target should also be
+a 2-D tensor with the same size of input, representing the sampled
+action and reward/advantage with the index of non-zero element in the vector
+represents the sampled action and the non-zero element itself represents
+the reward. If the action is space is large, you should consider using
+SparseTensor for target.
+
+The loss computed is simple the standard policy gradient,
+
+   loss = - 1/n * sum(R_{n} dot_product log(P_{n}))
+
+ where R_{n} is the reward vector, and P_{n} is the input distribution.
+ 
+ 
+* sizeAverage:  whether to average over each observations in the same batch
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+
+val criterion = PGCriterion()
+val input = Tensor[Float](2, 3).range(1, 6, 1)
+val target = Tensor[Float](2, 3).range(2, 13, 2)
+
+val loss = criterion.forward(input, target)
+
+> loss
+-58.05011
+
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = PGCriterion()
+input = np.arange(1, 7, 1).astype("float32")
+input = input.reshape(2, 3)
+target = np.arange(2, 13, 2).astype("float32")
+target = target.reshape(2, 3)
+
+loss = criterion.forward(input, target)
+
+
+> loss
+-58.05011
+```
+
+## CosineDistanceCriterion ##
+
+**Scala:**
+```scala
+val criterion = CosineDistanceCriterion()
+```
+**Python:**
+```python
+criterion = CosineDistanceCriterion(size_average = True)
+```
+
+ This loss function measures the Cosine Distance between the target and the output
+``` 
+ loss(o, t) = 1 - cos(o, t)
+```
+ By default, the losses are averaged for each mini-batch over observations as well as over
+ dimensions. However, if the field sizeAverage is set to false, the losses are instead summed.
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.numeric.NumericFloat
+
+val criterion = CosineDistanceCriterion()
+val input = Tensor(1, 5).rand
+val target = Tensor(1, 5).rand
+val loss = criterion.forward(input, target)
+
+> println(target)
+target: com.intel.analytics.bigdl.tensor.Tensor[Float] =
+0.95363826	0.3175587	0.90366143	0.10316128	0.05317958
+[com.intel.analytics.bigdl.tensor.DenseTensor of size 1x5]
+
+
+> println(input)
+input: com.intel.analytics.bigdl.tensor.Tensor[Float] =
+0.5895327	0.20547494	0.43118918	0.28824696	0.032088008
+[com.intel.analytics.bigdl.tensor.DenseTensor of size 1x5]
+
+
+> println(loss)
+loss: Float = 0.048458755
+
+```
+
+**Python example:**
+```python
+from bigdl.nn.layer import *
+from bigdl.nn.criterion import *
+from bigdl.optim.optimizer import *
+from bigdl.util.common import *
+
+criterion = CosineDistanceCriterion(size_average = True)
+input = np.random.uniform(0, 1, (1, 5)).astype("float32")
+target = np.random.uniform(0, 1, (1, 5)).astype("float32")
+loss = criterion.forward(input, target)
+
+> input
+array([[ 0.34291017,  0.95894575,  0.23869193,  0.42518589,  0.73902631]], dtype=float32)
+
+> target 
+array([[ 0.00489056,  0.7253111 ,  0.94344038,  0.69811821,  0.45532107]], dtype=float32)
+
+> loss
+0.20651573
+
+```
+
+## CategoricalCrossEntropy ##
+
+**Scala:**
+```scala
+val criterion = CategoricalCrossEntropy()
+```
+**Python:**
+```python
+criterion = CategoricalCrossEntropy()
+```
+
+This is same with cross entropy criterion, except the target tensor is a
+one-hot tensor.
+
+**Scala example:**
+```scala
+import com.intel.analytics.bigdl.numeric.NumericFloat
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor.Tensor
+
+val criterion = CategoricalCrossEntropy()
+val input = Tensor(1, 5).rand()
+val target = Tensor(1, 5).zero().setValue(1, 3, 1)
+val loss = criterion.forward(input, target)
+
+> println(target)
+target: com.intel.analytics.bigdl.tensor.Tensor[Float] =
+0.0     0.0     1.0     0.0     0.0
+[com.intel.analytics.bigdl.tensor.DenseTensor of size 1x5]
+
+
+> println(input)
+input: com.intel.analytics.bigdl.tensor.Tensor[Float] =
+0.95245546      0.8304343       0.8296352       0.13989972      0.17466335
+[com.intel.analytics.bigdl.tensor.DenseTensor of size 1x5]
+
+
+> println(loss)
+loss: Float = 1.2607772
+```
+
+**Python example:**
+```python
+import numpy as np
+from bigdl.nn.criterion import *
+
+criterion = CategoricalCrossEntropy()
+input = np.random.uniform(0, 1, (1, 5)).astype("float32")
+target = np.zeros((1, 5)).astype("float32")
+target[0, 2] = 1
+loss = criterion.forward(input, target)
+
+> input
+array([[ 0.31309742,  0.75959802,  0.01649681,  0.65792692,  0.21528937]], dtype=float32)
+
+> target 
+array([[ 0.,  0.,  1.,  0.,  0.]], dtype=float32)
+
+> loss
+4.7787604
 ```

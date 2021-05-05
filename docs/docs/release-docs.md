@@ -1,8 +1,31 @@
+## **Release 0.12.1**
+[BigDL 0.12.1 Docs](https://bigdl-project.github.io/0.12.1)
+
+## **Release 0.11.0**
+[BigDL 0.11.0 Docs](https://bigdl-project.github.io/0.11.0)
+
+## **Release 0.10.0**
+[BigDL 0.10.0 Docs](https://bigdl-project.github.io/0.10.0)
+
+## **Release 0.9.0**
+[BigDL 0.9.0 Docs](https://bigdl-project.github.io/0.9.0)
+
+## **Release 0.8.0**
+[BigDL 0.8.0 Docs](https://bigdl-project.github.io/0.8.0)
+
+## **Release 0.7.0**
+[BigDL 0.7.0 Docs](https://bigdl-project.github.io/0.7.0)
+
+## **Release 0.6.0**
+[BigDL 0.6.0 Docs](https://bigdl-project.github.io/0.6.0)
 
 ---
-## **Latest Master**
+## **Release 0.5.0**
+[BigDL 0.5.0 Docs](https://bigdl-project.github.io/0.5.0)
 
-[Master Docs](https://bigdl-project.github.io/master)
+---
+## **Release 0.4.0**
+[BigDL 0.4.0 Docs](https://bigdl-project.github.io/0.4.0)
 
 ---
 ## **Release 0.3.0**

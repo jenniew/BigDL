@@ -18,7 +18,7 @@ package com.intel.analytics.bigdl.utils.tf.loaders
 import java.nio.ByteOrder
 
 import com.intel.analytics.bigdl.Module
-import com.intel.analytics.bigdl.nn.ops.{ParseExample => ParseExampleOperation}
+import com.intel.analytics.bigdl.nn.tf.{ParseExample => ParseExampleOperation}
 import com.intel.analytics.bigdl.tensor._
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.tf.Context
@@ -42,6 +42,7 @@ class ParseExample extends TensorflowOpsLoader {
         case DataType.DT_FLOAT => FloatType
         case DataType.DT_DOUBLE => DoubleType
         case DataType.DT_STRING => StringType
+        case _ => throw new UnsupportedOperationException("Unsupported data type")
       }
     val denseShapes = nodeDef.getAttrMap.get("dense_shapes")
       .getList.getShapeList.asScala

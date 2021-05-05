@@ -37,6 +37,7 @@ class BatchMatMul[T: ClassTag, D: ClassTag](
          (implicit ev: TensorNumeric[T], ev2: TensorNumeric[D])
   extends Operation[Table, Tensor[D], T] {
   gradInput = T(Tensor[D], Tensor[D]())
+  output = Tensor[D]()
 
   override def updateOutput(input: Table): Tensor[D] = {
     var x: Tensor[D] = input(1)
@@ -78,7 +79,7 @@ class BatchMatMul[T: ClassTag, D: ClassTag](
       if (adjY) {
         reshapedY = reshapedY.transpose(2, 3)
       }
-      require(reshapedX.size(2) == reshapedY.size(3), "matrix sizes do not match" +
+      require(reshapedX.size(3) == reshapedY.size(2), "matrix sizes do not match" +
         s"the matrix sizes are ${reshapedX.size(2)} and ${reshapedY.size(3)}")
 
       output.resize(batchSize, reshapedX.size(2), reshapedY.size(3))
@@ -88,6 +89,11 @@ class BatchMatMul[T: ClassTag, D: ClassTag](
     }
 
     output
+  }
+
+  override def getClassTagNumerics() : (Array[ClassTag[_]], Array[TensorNumeric[_]]) = {
+    (Array[ClassTag[_]](scala.reflect.classTag[T], scala.reflect.classTag[D]),
+      Array[TensorNumeric[_]](ev, ev2))
   }
 }
 

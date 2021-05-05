@@ -16,17 +16,24 @@
 
 package com.intel.analytics.bigdl.dataset
 
+import java.nio.ByteBuffer
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.atomic.AtomicInteger
-
 import com.intel.analytics.bigdl.DataSet
 import com.intel.analytics.bigdl.dataset.image.{LabeledBGRImage, _}
-import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator}
-import org.apache.hadoop.io.Text
+import com.intel.analytics.bigdl.dataset.segmentation.{COCODataset, COCODeserializer}
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.transform.vision.image.label.roi.RoiLabel
+import com.intel.analytics.bigdl.transform.vision.image.{DistributedImageFrame, ImageFeature, ImageFrame, LocalImageFrame, RoiImageInfo}
+import com.intel.analytics.bigdl.utils.{Engine, RandomGenerator, T}
+import java.awt.Color
+import java.awt.image.{BufferedImage, DataBufferByte}
+import java.io.ByteArrayInputStream
+import javax.imageio.ImageIO
+import org.apache.hadoop.io.{BytesWritable, Text}
 import org.apache.log4j.Logger
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-
 import scala.reflect._
 
 /**
@@ -349,18 +356,28 @@ object DataSet {
   /**
    * Wrap a RDD as a DataSet.
    * @param data
+   * @param partitionNum repartition data rdd to partition number, default node number.
    * @tparam T
    * @return
    */
-  def rdd[T: ClassTag](data: RDD[T]): DistributedDataSet[T] = {
-    val nodeNumber = Engine.nodeNumber()
+  def rdd[T: ClassTag](data: RDD[T], partitionNum: Int = Engine.nodeNumber()
+    ): DistributedDataSet[T] = {
     new CachedDistriDataSet[T](
-      data.coalesce(nodeNumber, true)
+      data.coalesce(partitionNum, true)
         .mapPartitions(iter => {
           Iterator.single(iter.toArray)
         }).setName("cached dataset")
         .cache()
     )
+  }
+
+  def imageFrame(imageFrame: ImageFrame): DataSet[ImageFeature] = {
+    imageFrame match {
+      case distributedImageFrame: DistributedImageFrame =>
+        rdd[ImageFeature](distributedImageFrame.rdd)
+      case localImageFrame: LocalImageFrame =>
+        array(localImageFrame.array)
+    }
   }
 
   /**
@@ -546,6 +563,107 @@ object DataSet {
         ByteRecord(image._2.copyBytes(), readLabel(image._1).toFloat)
       }).filter(_.label <= classNum)
       rawData.coalesce(num, true)
+    }
+
+    /**
+     * Extract hadoop sequence files from an HDFS path as ImageFrame
+     * @param url sequence files folder path
+     * @param sc spark context
+     * @param classNum class number of data
+     * @param partitionNum partition number, default: Engine.nodeNumber() * Engine.coreNumber()
+     * @return
+     */
+    private[bigdl] def filesToImageFrame(url: String, sc: SparkContext,
+      classNum: Int, partitionNum: Option[Int] = None): ImageFrame = {
+      val num = partitionNum.getOrElse(Engine.nodeNumber() * Engine.coreNumber())
+      val rawData = sc.sequenceFile(url, classOf[Text], classOf[Text], num).map(image => {
+        val rawBytes = image._2.copyBytes()
+        val label = Tensor[Float](T(readLabel(image._1).toFloat))
+        val imgBuffer = ByteBuffer.wrap(rawBytes)
+        val width = imgBuffer.getInt
+        val height = imgBuffer.getInt
+        val bytes = new Array[Byte](3 * width * height)
+        System.arraycopy(imgBuffer.array(), 8, bytes, 0, bytes.length)
+        val imf = ImageFeature(bytes, label)
+        imf(ImageFeature.originalSize) = (height, width, 3)
+        imf
+      }).filter(_[Tensor[Float]](ImageFeature.label).valueAt(1) <= classNum)
+      ImageFrame.rdd(rawData)
+    }
+
+    private def isSingleChannelImage(image: BufferedImage): Boolean = {
+      if (image.getType == BufferedImage.TYPE_BYTE_GRAY) return true
+      if (image.getType == BufferedImage.TYPE_USHORT_GRAY) return true
+      if (image.getRaster.getNumBands == 1) return true
+      false
+    }
+
+    /**
+     * Decode raw bytes read from an image file into decoded bytes. If the file is 1 channel grey
+     * scale image, automatically convert to 3 channels
+     * @param in the input raw image bytes
+     * @return the decoded 3 channel bytes in BGR order
+     */
+    private[bigdl] def decodeRawImageToBGR(in: Array[Byte]) : Array[Byte] = {
+      val inputStream = new ByteArrayInputStream(in)
+      val image = {
+        val img = ImageIO.read(inputStream)
+        if (isSingleChannelImage(img)) {
+          val imageBuff: BufferedImage =
+            new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_3BYTE_BGR)
+          imageBuff.getGraphics.drawImage(img, 0, 0, new Color(0, 0, 0), null)
+          imageBuff
+        } else {
+          img
+        }
+      }
+      image.getRaster.getDataBuffer.asInstanceOf[DataBufferByte].getData()
+    }
+
+    /**
+     * Extract hadoop sequence files from an HDFS path as ImageFeatures
+     * @param url sequence files folder path
+     * @param sc spark context
+     * @param partitionNum partition number, default: Engine.nodeNumber() * Engine.coreNumber()
+     * @return
+     */
+    private[bigdl] def filesToRoiImageFeatures(url: String, sc: SparkContext,
+      partitionNum: Option[Int] = None): DataSet[ImageFeature] = {
+      val num = partitionNum.getOrElse(Engine.nodeNumber() * Engine.coreNumber())
+      val rawData = sc.sequenceFile(url, classOf[BytesWritable], classOf[BytesWritable], num)
+        .map { data =>
+          val metaBytes = new COCODeserializer(ByteBuffer.wrap(data._1.getBytes))
+          val fileName = metaBytes.getString
+          val (height, width, anno) = metaBytes.getAnnotations
+
+          val labelClasses = Tensor(anno.map(_.categoryIdx.toFloat), Array(anno.length))
+          val bboxes = Tensor(
+            anno.toIterator.flatMap(ann => {
+              val x1 = ann.bbox1
+              val y1 = ann.bbox2
+              val x2 = ann.bbox3
+              val y2 = ann.bbox4
+              Iterator(x1, y1, x2, y2)
+            }).toArray,
+            Array(anno.length, 4))
+          val isCrowd = Tensor(anno.map(ann => if (ann.isCrowd) 1f else 0f), Array(anno.length))
+          val masks = anno.map(ann => ann.masks)
+          require(metaBytes.getInt == COCODataset.MAGIC_NUM, "Corrupted metadata")
+
+          val rawdata = decodeRawImageToBGR(data._2.getBytes)
+          require(rawdata.length == height * width * 3)
+          val imf = ImageFeature(rawdata, RoiLabel(labelClasses, bboxes, masks), fileName)
+          imf(ImageFeature.originalSize) = (height, width, 3)
+          imf(RoiImageInfo.ISCROWD) = isCrowd
+          imf
+        }
+        .coalesce(num)
+     DataSet.rdd(rawData, num)
+    }
+
+    private[bigdl] def filesToImageFeatureDataset(url: String, sc: SparkContext,
+      classNum: Int, partitionNum: Option[Int] = None): DistributedDataSet[ImageFeature] = {
+      rdd[ImageFeature](filesToImageFrame(url, sc, classNum, partitionNum).toDistributed().rdd)
     }
 
     private[bigdl] def findFiles(path: Path): Array[LocalSeqFilePath] = {

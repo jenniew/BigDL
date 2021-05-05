@@ -1,7 +1,3 @@
-
-
----
-
 * __Cray__: [Cray Urika-XC Analytics Suite](http://www.cray.com/products/analytics/urika-xc) uses BigDL to provide AI support
 * __Databricks__: [Intel’s BigDL on Databricks](https://databricks.com/blog/2017/02/09/intels-bigdl-databricks.html)
 * __Azure__: [Use BigDL on AZure HDInsight](https://azure.microsoft.com/en-us/blog/use-bigdl-on-hdinsight-spark-for-distributed-deep-learning/)
@@ -12,3 +8,5 @@
 * __Microsoft__: [Running BigDL on Microsoft Data Science Virtual Machine](https://blogs.technet.microsoft.com/machinelearning/2017/06/20/running-bigdl-apache-spark-deep-learning-library-on-microsoft-data-science-virtual-machine/)
 * __Lightbend__: [Using Apache Spark with Intel BigDL on Mesosphere DC/OS](http://developer.lightbend.com/blog/2017-06-22-bigdl-on-mesos/)
 * __Qubole__: Deep Learning on Qubole Using BigDL for Apache Spark ([Part 1](https://www.qubole.com/blog/deep-learning-qubole-using-intels-bigdl-apache-spark-part-1/) and [Part 2](https://www.qubole.com/blog/deep-learning-qubole-using-bigdl-apache-spark-part-2/))
+* __Telefonica Open Cloud and [Virtual Data Center](https://www.cloud.telefonica.com/en/services/infrastructure-as-a-service-iaas/virtual-data-center/)__: [Using BigDL in Telefonica Open Cloud](https://support.telefonicaopencloud.com/en-us/ecs/doc/download/20180329/20180329111611_166372a698.pdf) and [How to use BigDL to launch Deep Learning applications in MRS](https://www.cloud.telefonica.com/media/27946/c%C3%B3mo-utilizar-bigdl-para-lanzar-aplicaciones-de-deep-learning-en-mrs.pdf)
+* __Google Cloud Dataproc__: [Using BigDL for deep learning with Apache Spark and Google Cloud Dataproc](https://cloud.google.com/blog/big-data/2018/04/using-bigdl-for-deep-learning-with-apache-spark-and-google-cloud-dataproc)

@@ -16,15 +16,14 @@
 
 package com.intel.analytics.bigdl.nn
 
-import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
-import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.utils.{RandomGenerator, T, Table}
-
-import scala.reflect.ClassTag
-import RandomGenerator._
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.nn.abstractnn.{Initializable, TensorModule}
 import com.intel.analytics.bigdl.optim.Regularizer
+import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
+import com.intel.analytics.bigdl.utils.{Shape, T, Table}
+
+import scala.reflect.ClassTag
 
 /**
  * The `Linear` module applies a linear transformation to the input data,
@@ -52,7 +51,8 @@ class Linear[T: ClassTag](
   private val initBias: Tensor[T] = null,
   private val initGradWeight: Tensor[T] = null,
   private val initGradBias: Tensor[T] = null
-)(implicit ev: TensorNumeric[T]) extends TensorModule[T] with Initializable {
+)(implicit ev: TensorNumeric[T])
+  extends TensorModule[T] with Initializable with MklInt8Convertible {
   val weight: Tensor[T] =
     if (initWeight != null) initWeight else Tensor[T](outputSize, inputSize)
   val bias: Tensor[T] =
@@ -167,20 +167,6 @@ class Linear[T: ClassTag](
     }
   }
 
-  override def updateParameters(learningRate: T): Unit = {
-    weight.add(ev.negative(learningRate), gradWeight)
-    if (withBias) bias.add(ev.negative(learningRate), gradBias)
-  }
-
-  override def zeroGradParameters(): Unit = {
-    gradWeight.resize(outputSize, inputSize)
-    gradWeight.zero()
-    if (withBias) {
-      gradBias.resize(outputSize)
-      gradBias.zero()
-    }
-  }
-
   override def clearState() : this.type = {
     super.clearState()
     addBuffer.set()
@@ -192,15 +178,6 @@ class Linear[T: ClassTag](
       (Array(this.weight), Array(this.gradWeight))
     } else {
       (Array(this.weight, this.bias), Array(this.gradWeight, this.gradBias))
-    }
-  }
-
-  override def getParametersTable(): Table = {
-    if (null == bias) {
-      T(getName() -> T("weight" -> weight, "gradWeight" -> gradWeight))
-    } else {
-      T(getName() -> T("weight" -> weight, "bias" -> bias,
-        "gradWeight" -> gradWeight, "gradBias" -> gradBias))
     }
   }
 
@@ -237,6 +214,13 @@ class Linear[T: ClassTag](
 
   override def toString(): String = {
     s"${getPrintName}($inputSize -> $outputSize)"
+  }
+
+  override def computeOutputShape(inputShape: Shape): Shape = {
+    val _inputSize = inputShape.toSingle().toArray
+    if (_inputSize.length == 1) {
+      Shape(outputSize)
+    } else Shape(_inputSize(0), outputSize)
   }
 }
 

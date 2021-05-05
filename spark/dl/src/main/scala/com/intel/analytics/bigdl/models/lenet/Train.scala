@@ -19,10 +19,10 @@ package com.intel.analytics.bigdl.models.lenet
 import com.intel.analytics.bigdl._
 import com.intel.analytics.bigdl.dataset.DataSet
 import com.intel.analytics.bigdl.dataset.image.{BytesToGreyImg, GreyImgNormalizer, GreyImgToBatch}
-import com.intel.analytics.bigdl.nn.{ClassNLLCriterion, Module}
+import com.intel.analytics.bigdl.nn.{ClassNLLCriterion, CrossEntropyCriterion, Module}
 import com.intel.analytics.bigdl.numeric.NumericFloat
 import com.intel.analytics.bigdl.optim._
-import com.intel.analytics.bigdl.utils.{Engine, LoggerFilter, T, Table}
+import com.intel.analytics.bigdl.utils._
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkContext
 
@@ -48,7 +48,25 @@ object Train {
       val model = if (param.modelSnapshot.isDefined) {
         Module.load[Float](param.modelSnapshot.get)
       } else {
-        if (param.graphModel) LeNet5.graph(classNum = 10) else LeNet5(classNum = 10)
+        if (param.graphModel) {
+          LeNet5.graph(classNum = 10)
+        } else {
+          Engine.getEngineType() match {
+            case MklBlas => LeNet5(10)
+            case MklDnn => LeNet5.dnnGraph(param.batchSize / Engine.nodeNumber(), 10)
+          }
+        }
+      }
+      val criterion = Engine.getEngineType() match {
+        case MklBlas => ClassNLLCriterion()
+        case MklDnn => CrossEntropyCriterion()
+      }
+
+      if (param.optimizerVersion.isDefined) {
+        param.optimizerVersion.get.toLowerCase match {
+          case "optimizerv1" => Engine.setOptimizerVersion(OptimizerV1)
+          case "optimizerv2" => Engine.setOptimizerVersion(OptimizerV2)
+        }
       }
 
       val optimMethod = if (param.stateSnapshot.isDefined) {
@@ -65,7 +83,7 @@ object Train {
       val optimizer = Optimizer(
         model = model,
         dataset = trainSet,
-        criterion = ClassNLLCriterion[Float]())
+        criterion = criterion)
       if (param.checkpoint.isDefined) {
         optimizer.setCheckpoint(param.checkpoint.get, Trigger.everyEpoch)
       }

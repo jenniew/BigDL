@@ -16,14 +16,20 @@
 
 package com.intel.analytics.bigdl.nn
 
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
 import com.intel.analytics.bigdl.numeric.NumericFloat
 import com.intel.analytics.bigdl.tensor.{SparseTensor, Tensor}
-import com.intel.analytics.bigdl.utils.T
+import com.intel.analytics.bigdl.utils.{RandomGenerator, T}
+import com.intel.analytics.bigdl.utils.serializer.ModuleSerializationTest
 
 import scala.util.Random
 
-class SparseLinearSpec extends FlatSpec with Matchers {
+class SparseLinearSpec extends FlatSpec with Matchers with BeforeAndAfter {
+
+  before {
+    RandomGenerator.RNG.setSeed(100)
+  }
+
   "Sparse Linear" should "return the same result with Linear" in {
     val weight = Tensor.range(1, 8, 1).resize(2, 4)
     val bias = Tensor(2)
@@ -142,9 +148,11 @@ class SparseLinearSpec extends FlatSpec with Matchers {
   }
 
   "Sparse Linear" should "return the same result with Linear 7" in {
+    RandomGenerator.RNG.setSeed(10)
+    val rnd = new Random(10)
     val gradOutput = Tensor(4, 2).rand()
-    val input = Tensor(4, 1023213).apply1(_ => Random.nextInt(100000) / 99999 * Random.nextFloat())
-    val input2 = Tensor(4, 50).apply1(_ => Random.nextInt(2) * Random.nextFloat())
+    val input = Tensor(4, 1023213).apply1(_ => rnd.nextInt(100000) / 99999 * rnd.nextFloat())
+    val input2 = Tensor(4, 50).apply1(_ => rnd.nextInt(2) * rnd.nextFloat())
     val sl = SparseLinear(1023263, 2, backwardStart = 1, backwardLength = 1023263)
     val sj = SparseJoinTable(2)
     val sparseModel = Sequential().add(ParallelTable().add(Identity()).add(Identity()))
@@ -170,5 +178,14 @@ class SparseLinearSpec extends FlatSpec with Matchers {
     out1 shouldEqual out2
     sl.gradInput should be (gradInput2)
     sl.getParameters()._2.equals(l.getParameters()._2) shouldEqual true
+  }
+}
+
+class SparseLinearSerialTest extends ModuleSerializationTest {
+  override def test(): Unit = {
+    val sparseLinear = SparseLinear[Float](4, 2).setName("sparseLinear")
+    val input = Tensor[Float](2, 4).apply1(_ => Random.nextFloat())
+    val sparseInput = Tensor.sparse(input)
+    runSerializationTest(sparseLinear, sparseInput)
   }
 }

@@ -49,6 +49,14 @@ import com.intel.analytics.bigdl.dataset._
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.bigdl.tensor.Tensor
+import org.apache.spark.SparkContext
+
+val conf = Engine.createSparkConf()
+    .setAppName("optimization")
+    .setMaster("local[*]")
+    
+val sc = new SparkContext(conf)
+Engine.init
 
 // Define the model
 val model = Linear[Float](2, 1)
@@ -119,6 +127,29 @@ data you want to process, a.k.a epoch.
 // The default endWhen in scala is 100 iterations
 optimizer.setEndWhen(Trigger.maxEpoch(10))  // Change to 10 epoch
 ```
+You also can use multiple triggers to decide when to end the training:
+```scala
+// If all of the inner triggers are triggered (logical AND)
+optimizer.setEndWhen(
+   Trigger.and(Trigger.maxScore(0.99f),Trigger.maxEpoch(10))
+)
+
+// If any of the inner triggers are triggered (logical OR)
+optimizer.setEndWhen(
+   Trigger.or(Trigger.maxScore(0.99f),Trigger.maxEpoch(10))
+)
+
+// Inner and/or 
+optimizer.setEndWhen(
+   Trigger.or(
+        Trigger.and( 
+            Trigger.maxScore(0.99f), Trigger.maxEpoch(10) 
+        ),
+        Trigger.maxEpoch(50)
+   )
+)
+```
+ 
 
 **python**
 ```
@@ -140,6 +171,20 @@ optimizer.setOptimMethod(new Adam())  // Change to adam
 ```
 # Python need to define the optimization algorithm in the constructor
 optimizer = Optimizer(model, train_data, MSECriterion(), MaxIteration(100), 4, optim_method = Adam())
+```
+Sometimes, people want to apply different optimization algorithms for the submodules of the neural network model. 
+BigDL provide a method to set optimMethod for submoduels by submodules' name.
+
+**scala**
+```scala
+val optimMethods = Map("wide" -> new Ftrl[Float](), "deep" -> new Adagrad[Float]())
+optimizer.setOptimMethods(optimMethods)
+```
+
+**python**
+```python
+optimMethods = {"wide": Ftrl(), "deep": Adagrad()}
+optimizer.setOptimMethods(optimMethods)
 ```
 
 ## Validate your model in training

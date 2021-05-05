@@ -6,7 +6,7 @@ val optim = new Adam(learningRate=1e-3, learningRateDecay=0.0, beta1=0.9, beta2=
 ```
 **Python:**
 ```python
-optim = Adam(learningRate=1e-3, learningRateDecay-0.0, beta1=0.9, beta2=0.999, Epsilon=1e-8, bigdl_type="float")
+optim = Adam(learningrate=1e-3, learningrate_decay=0.0, beta1=0.9, beta2=0.999, epsilon=1e-8, bigdl_type="float")
 ```
 
 An implementation of Adam optimization, first-order gradient-based optimization of stochastic  objective  functions. http://arxiv.org/pdf/1412.6980.pdf
@@ -90,7 +90,7 @@ optimizer = Optimizer(
 
 **Scala:**
 ```scala
-val optimMethod = SGD(learningRate= 1e-3,learningRateDecay=0.0,
+val optimMethod = new SGD(learningRate= 1e-3,learningRateDecay=0.0,
                       weightDecay=0.0,momentum=0.0,dampening=Double.MaxValue,
                       nesterov=false,learningRateSchedule=Default(),
                       learningRates=null,weightDecays=null)
@@ -142,7 +142,7 @@ http://arxiv.org/abs/1212.5701.
 
 **Scala:**
 ```scala
-val optimMethod = Adadelta(decayRate = 0.9, Epsilon = 1e-10)
+val optimMethod = new Adadelta(decayRate = 0.9, Epsilon = 1e-10)
 ```
 **Python:**
 ```python
@@ -171,10 +171,11 @@ optimizer = Optimizer(
 ## RMSprop ##
 
 An implementation of RMSprop (Reference: http://arxiv.org/pdf/1308.0850v5.pdf, Sec 4.2)
+
 * learningRate : learning rate
-* learningRateDecaye : learning rate decay
-* decayRatee : decayRate, also called rho
-* Epsilone : for numerical stability
+* learningRateDecay : learning rate decay
+* decayRate : decayRate, also called rho
+* Epsilon : for numerical stability
 
 ## Adamax ##
 
@@ -209,7 +210,9 @@ val adagrad = new Adagrad(learningRate = 1e-3,
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor._
-val adagrad = Adagrad(0.01, 0.0, 0.0)
+import com.intel.analytics.bigdl.utils.T
+
+val adagrad = new Adagrad(0.01, 0.0, 0.0)
     def feval(x: Tensor[Float]): (Float, Tensor[Float]) = {
       // (1) compute f(x)
       val d = x.size(1)
@@ -251,6 +254,7 @@ x after optimize: 0.27779138
 [com.intel.analytics.bigdl.tensor.DenseTensor$mcF$sp of size 2]
 ```
 
+## LBFGS ##
 
 **Scala:**
 ```scala
@@ -276,13 +280,14 @@ large-scale stochastic problems, where opfunc is a noisy approximation of f(x). 
 case, the learning rate allows a reduction of confidence in the step size.
 
 **Parameters:**
-* **maxIter** - Maximum number of iterations allowed. Default: 20
-* **maxEval** - Maximum number of function evaluations. Default: Double.MaxValue
-* **tolFun** - Termination tolerance on the first-order optimality. Default: 1e-5
-* **tolX** - Termination tol on progress in terms of func/param changes. Default: 1e-9
-* **learningRate** - the learning rate. Default: 1.0
-* **lineSearch** - A line search function. Default: None
-* **lineSearchOptions** - If no line search provided, then a fixed step size is used. Default: None
+
+* maxIter - Maximum number of iterations allowed. Default: 20
+* maxEval - Maximum number of function evaluations. Default: Double.MaxValue
+* tolFun - Termination tolerance on the first-order optimality. Default: 1e-5
+* tolX - Termination tol on progress in terms of func/param changes. Default: 1e-9
+* learningRate - the learning rate. Default: 1.0
+* lineSearch - A line search function. Default: None
+* lineSearchOptions - If no line search provided, then a fixed step size is used. Default: None
 
 **Scala example:**
 ```scala
@@ -307,4 +312,65 @@ optimizer = Optimizer(
     batch_size=32)
 ```
 
+## Ftrl ##
 
+**Scala:**
+```scala
+val optimMethod = new Ftrl(
+  learningRate = 1e-3, learningRatePower = -0.5,
+  initialAccumulatorValue = 0.1, l1RegularizationStrength = 0.0,
+  l2RegularizationStrength = 0.0, l2ShrinkageRegularizationStrength = 0.0)
+```
+
+**Python:**
+```python
+optim_method = Ftrl(learningrate = 1e-3, learningrate_power = -0.5, \
+                 initial_accumulator_value = 0.1, l1_regularization_strength = 0.0, \
+                 l2_regularization_strength = 0.0, l2_shrinkage_regularization_strength = 0.0)
+```
+
+An implementation of (Ftrl)[https://www.eecs.tufts.edu/~dsculley/papers/ad-click-prediction.pdf.]
+Support L1 penalty, L2 penalty and shrinkage-type L2 penalty.
+
+**Parameters:**
+
+* learningRate: learning rate
+* learningRatePower: double, must be less or equal to zero. Default is -0.5.
+* initialAccumulatorValue: double, the starting value for accumulators, require zero or positive values. Default is 0.1.
+* l1RegularizationStrength: double, must be greater or equal to zero. Default is zero.
+* l2RegularizationStrength: double, must be greater or equal to zero. Default is zero.
+* l2ShrinkageRegularizationStrength: double, must be greater or equal to zero. Default is zero. This differs from l2RegularizationStrength above. L2 above is a stabilization penalty, whereas this one is a magnitude penalty.
+
+**Scala example:**
+```scala
+val optimMethod = new Ftrl(learningRate = 5e-3, learningRatePower = -0.5,
+  initialAccumulatorValue = 0.01)
+optimizer.setOptimMethod(optimMethod)
+```
+
+**Python example:**
+```python
+optim_method = Ftrl(learningrate = 5e-3, \
+    learningrate_power = -0.5, \
+    initial_accumulator_value = 0.01)
+                  
+optimizer = Optimizer(
+    model=mlp_model,
+    training_rdd=train_data,
+    criterion=ClassNLLCriterion(),
+    optim_method=optim_method,
+    end_trigger=MaxEpoch(20),
+    batch_size=32)
+```
+
+## ParallelAdam ##
+Multi-Thread version of [Adam](#adam).
+
+**Scala:**
+```scala
+val optim = new ParallelAdam(learningRate=1e-3, learningRateDecay=0.0, beta1=0.9, beta2=0.999, Epsilon=1e-8, parallelNum=Engine.coreNumber())
+```
+**Python:**
+```python
+optim = ParallelAdam(learningrate=1e-3, learningrate_decay=0.0, beta1=0.9, beta2=0.999, epsilon=1e-8, parallel_num=get_node_and_core_number()[1], bigdl_type="float")
+```

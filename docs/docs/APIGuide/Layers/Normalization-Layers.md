@@ -104,8 +104,7 @@ This file implements Batch Normalization as described in the paper:
 "Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift"
 by Sergey Ioffe, Christian Szegedy.
 
-This implementation is useful for inputs coming from convolution layers.
-For non-convolutional layers, see `BatchNormalization`
+This implementation is useful for inputs coming from convolution layers and it only supports 4D tensors( including batch). For non-convolutional layers, see `BatchNormalization`
 The operation implemented is:
 ``` 
         ( x - mean(x) )
@@ -124,6 +123,9 @@ The operation implemented is:
 + `initBias`  initial bias tensor
 + `initGradWeight` initial gradient weight 
 + `initGradBias` initial gradient bias
++ `data_format` a string value (or DataFormat Object in Scala) of "NHWC" or "NCHW" to specify the input data format of this layer. In "NHWC" format
+                        data is stored in the order of \[batch_size, height, width, channels\], in "NCHW" format data is stored
+                        in the order of \[batch_size, channels, height, width\].
  
  
 **Scala example:**
@@ -209,6 +211,14 @@ SpatialCrossMapLRN applies Spatial Local Response Normalization between differen
           
 where  l1 corresponds to `max(0,f-ceil(size/2))` and l2 to `min(F, f-ceil(size/2) + size)`, `F` is the number  of feature maps       
 ```
+
++ `size`  the number of channels to sum over
++ `alpha`  the scaling parameter
++ `beta`   the exponent
++ `k` a constant
++ `data_format` a string value (or DataFormat Object in Scala) of "NHWC" or "NCHW" to specify the input data format of this layer. In "NHWC" format
+                        data is stored in the order of \[batch_size, height, width, channels\], in "NCHW" format data is stored
+                        in the order of \[batch_size, channels, height, width\]
 
 **Scala example:**
 ```scala
@@ -386,6 +396,10 @@ c is the channel number, h is the height and w is the width
 
 **Scala example:**
 ```scala
+import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric.NumericFloat
+import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.tensor._
+
 val module = Normalize(2.0,eps=1e-10)
 val input = Tensor(2,3).rand()
 input: com.intel.analytics.bigdl.tensor.Tensor[Float] =

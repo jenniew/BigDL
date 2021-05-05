@@ -15,18 +15,16 @@
  */
 package com.intel.analytics.bigdl.parameters
 
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{Callable, Executors, ExecutorService, Future, ThreadFactory}
-
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils.Engine
+import java.util.concurrent._
+import java.util.concurrent.atomic.AtomicLong
 import org.apache.commons.lang.exception.ExceptionUtils
 import org.apache.log4j.Logger
+import org.apache.spark.TaskContext
 import org.apache.spark.sparkExtension.SparkExtension
 import org.apache.spark.storage.{BlockId, BlockManagerWrapper, StorageLevel}
-import org.apache.spark.TaskContext
-
 import scala.collection.JavaConverters._
 import scala.reflect._
 
@@ -42,8 +40,8 @@ object AllReduceParameter {
     }
   })
 
-  private val computePoolSize: Int = System.getProperty("bigdl.Parameter.computePoolSize",
-    (Runtime.getRuntime().availableProcessors() / 2).toString).toInt
+  private val computePoolSize: Int = Math.max(System.getProperty("bigdl.Parameter.computePoolSize",
+    (Runtime.getRuntime().availableProcessors() / 2).toString).toInt, 1)
   val computePool: ExecutorService = Executors.newFixedThreadPool(computePoolSize,
     new ThreadFactory {
     override def newThread(r: Runnable): Thread = {
@@ -55,8 +53,12 @@ object AllReduceParameter {
 
   private val nextId = new AtomicLong(0)
 
-  def newParameter[T: ClassTag](partitionNum: Int, size: Int): AllReduceParameter[T] = {
-    new AllReduceParameter(nextId.getAndIncrement(), partitionNum, size)
+  def newParameter[T: ClassTag](
+        partitionNum: Int,
+        size: Int,
+        offset: Int = 1,
+        compress: String = "fp16")(implicit ev: TensorNumeric[T]): AllReduceParameter[T] = {
+    new AllReduceParameter(nextId.getAndIncrement(), partitionNum, size, offset, compress)
   }
 }
 
@@ -73,9 +75,16 @@ object AllReduceParameter {
  * @param id distinguish from other parameters
  * @param partitionNum how many partitions will use this parameter
  * @param size size of the parameter (1D vector)
+ * @param paramOffset start index in the origin parameter.
  * @tparam T Tensor element type
  */
-class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) extends Serializable {
+@SerialVersionUID(6448488922682975680L)
+class AllReduceParameter[T: ClassTag](
+      id: Long,
+      partitionNum: Int,
+      val size: Int,
+      val paramOffset: Int = 1,
+      val compress: String = "fp16")(implicit ev: TensorNumeric[T]) extends Serializable {
   import AllReduceParameter._
 
   @transient private var taskSize = 0
@@ -126,6 +135,18 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
   }
 
   /**
+   * Returns the start index (starting from 1, within the whole origin parameter)
+   * and length of the current local partition
+   */
+  private[bigdl] def localPartitionRange: (Int, Int) = {
+    // add paramOffset to the starting index
+    (paramOffset + partitionId * taskSize + math.min(partitionId, extraSize),
+      taskSize + (if (partitionId < extraSize) 1 else 0))
+  }
+
+
+
+  /**
    * This method should be called on each RDD partition before parameter synchronization begins.
    * An empty gradient tensor is placed in the block manager that can be used to store gradients.
    * A 1 / numPartition fraction of the `parameter` tensor is copied to the block manager as a
@@ -134,7 +155,8 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
    * @param parameter A tensor representing the initial underlying weights of this
    *                  `AllReduceParameter`
    */
-  def init(parameter: Tensor[T])(implicit ev: TensorNumeric[T]): Unit = {
+  def init(parameter: Tensor[T])(implicit ev: TensorNumeric[T]):
+    (Int, Int, Int) = {
     val _classTag = classTag[T]
     val start = partitionId * taskSize + math.min(partitionId, extraSize)
     val length = taskSize + (if (partitionId < extraSize) 1 else 0)
@@ -149,9 +171,10 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
     BlockManagerWrapper.putSingle(getGradientPartitionId(),
       _gradients, StorageLevel.MEMORY_AND_DISK, tellMaster = false)
     val blockId = getWeightBlockId(partitionId)
-    val fp16param = new FP16CompressedTensor[T](length)(_classTag)
-    fp16param.compress(0, parameter, start, length)
-    BlockManagerWrapper.putBytes(blockId, fp16param.bytes(), StorageLevel.MEMORY_ONLY_SER)
+    val compressed: CompressedTensor[T] = SerializerInstance.create(length, compress)
+    compressed.compress(0, parameter, start, length)
+    BlockManagerWrapper.putBytes(blockId, compressed.bytes(), StorageLevel.MEMORY_ONLY_SER)
+    (partitionId, start, length)
   }
 
   private def getWeightBlockId(pid: Int): BlockId = {
@@ -167,7 +190,7 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
   }
 
   private def getGradientBlockId(pidFrom: Int, pidTo: Int): BlockId = {
-    SparkExtension.getLocalBlockId(id.toString + pidTo + "gradientBytes" + pidFrom)
+    SparkExtension.getLocalBlockId(id.toString + "_" + pidTo + "gradientBytes" + pidFrom)
   }
 
   /**
@@ -187,12 +210,13 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
               val blockId = getWeightBlockId(pid)
               val localBuffer = BlockManagerWrapper.getLocalOrRemoteBytes(blockId).getOrElse {
                 throw new RuntimeException(s"Didn't find weight block $blockId in the block " +
-                  s"manager. Did you initialize this AllReduceParameter on every executor?")
+                  s"manager. This is usually because executor crashed. Please check your" +
+                  s"executors' log see the error (usually an OutOfMemory error)")
               }
               val start = pid * taskSize + math.min(pid, extraSize)
               val length = taskSize + (if (pid < extraSize) 1 else 0)
-              require(localBuffer.array().length == length * 2)
-              SerializerInstance.serialize(localBuffer).deCompress(0, localParameter, start, length)
+              SerializerInstance.create(localBuffer, compress)
+                .deCompress(0, localParameter, start, length)
               BlockManagerWrapper.unlock(blockId)
               pid
             } catch {
@@ -211,8 +235,9 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
    * Retrieve gradients for the slice of the model that this node is responsible for from all the
    * other nodes. A new thread is created for each separate node. The gradients are then summed
    * and then stored in decompressed form in `gradientPartition`.
+   * @param avgNumbers average numbers.
    */
-  def aggregateGradientPartition(): Unit = {
+  def aggregateGradientPartition(avgNumbers: Int): Unit = {
     require(partitionId < partitionNum, s"This parameter was created with $partitionNum " +
       s"partitions. It cannot be used on RDDs with > $partitionNum partitions.")
     val params = new Array[CompressedTensor[T]](partitionNum)
@@ -222,7 +247,7 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
           try {
             val blockId = getGradientBlockId(pid, partitionId)
             val tmp = BlockManagerWrapper.getLocalOrRemoteBytes(blockId).get
-            params(pid) = SerializerInstance.serialize(tmp)
+            params(pid) = SerializerInstance.create(tmp, compress)
             BlockManagerWrapper.unlock(blockId)
             pid
           } catch {
@@ -253,6 +278,7 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
       }
     ).asJava)
     params.head.deCompress(gradientPartition)
+    gradientPartition.div(ev.fromType(avgNumbers))
   }
 
   /**
@@ -272,13 +298,13 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
           val blockId = getGradientBlockId(partitionId, i)
           val block = BlockManagerWrapper.getLocalBytes(blockId)
           if (block.isDefined) {
-            val fp16param = new FP16CompressedTensor[T](block.get)(_classTag)
-            fp16param.compress(0, parameter, start, length)
+            val compressed: CompressedTensor[T] = SerializerInstance.create(block.get, compress)
+            compressed.compress(0, parameter, start, length)
             i
           } else {
-            val fp16param = new FP16CompressedTensor[T](length)(_classTag)
-            fp16param.compress(0, parameter, start, length)
-            BlockManagerWrapper.putBytes(blockId, fp16param.bytes(), StorageLevel.MEMORY_ONLY_SER)
+            val compressd: CompressedTensor[T] = SerializerInstance.create(length, compress)
+            compressd.compress(0, parameter, start, length)
+            BlockManagerWrapper.putBytes(blockId, compressd.bytes(), StorageLevel.MEMORY_ONLY_SER)
             i
           }
         }
@@ -292,16 +318,17 @@ class AllReduceParameter[T: ClassTag](id: Long, partitionNum: Int, size: Int) ex
    */
   def sendWeightPartition(): Unit = {
     val blockId = getWeightBlockId(partitionId)
+    val localBuffer = BlockManagerWrapper.getLocalBytes(blockId).getOrElse {
+      throw new RuntimeException(s"Didn't find weight block $blockId in the block " +
+        s"manager. Did you initialize this AllReduceParameter on every executor?")
+    }
+    SerializerInstance.create(localBuffer, compress).compress(weightPartition)
+
     val weightsId = getWeightPartitionId()
-    require(weightPartition != null, "Cannot send the weights for this partition until they have" +
-      " been updated by the optimizer!")
-    BlockManagerWrapper.removeBlock(blockId)
-    BlockManagerWrapper.unlock(weightsId)
-    BlockManagerWrapper.removeBlock(weightsId)
-    BlockManagerWrapper.putSingle(weightsId,
-      weightPartition, StorageLevel.MEMORY_AND_DISK, tellMaster = false)
-    BlockManagerWrapper.putBytes(blockId,
-      SerializerInstance.serialize(weightPartition).bytes(), StorageLevel.MEMORY_ONLY_SER)
+    val weights = BlockManagerWrapper.getLocal(weightsId)
+      .map(_.data.next().asInstanceOf[Tensor[T]])
+      .getOrElse(throw new IllegalStateException("Please initialize AllReduceParameter first!"))
+    weights.copy(weightPartition)
   }
 }
 
