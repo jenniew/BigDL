@@ -29,7 +29,7 @@ import org.tensorflow.util.Event
  * @param file Support local path and HDFS path
  */
 private[bigdl] class RecordWriter(file: Path, fs: FileSystem) {
-  val outputStream = if (file.toString.startsWith("hdfs://")) {
+  val outputStream = if (file.toString.matches("^(.*)://.*$")) {
     // FSDataOutputStream couldn't flush data to localFileSystem in time. So reading summaries
     // will throw exception.
     fs.create(file, true, 1024)
