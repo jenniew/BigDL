@@ -206,7 +206,9 @@ def partition_get_data_label(partition_data,
     :return: Concatenated data for the data partition.
     """
     data_list = [data['x'] for data in partition_data]
+    print("data_list is: ", data_list )
     label_list = [data['y'] for data in partition_data]
+    print("label_list is: ", label_list)
 
     data = _convert_list_tuple(combine(data_list),
                                allow_tuple=allow_tuple, allow_list=allow_list)
