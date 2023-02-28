@@ -212,29 +212,15 @@ class SparkTFEstimator():
         # Repartition Spark DataFrame before converting to SparkXShards.
         # Repartition on SparkXShards will result in empty partitions.
         if isinstance(data, DataFrame) or isinstance(data, SparkXShards):
-            if isinstance(data, DataFrame):
-                if data.rdd.getNumPartitions() < self.num_workers:
-                    data = data.repartition(self.num_workers)
-                elif data.rdd.getNumPartitions() > self.num_workers:
-                    data = data.coalesce(self.num_workers)
-            else:
-                if data.rdd.getNumPartitions() != self.num_workers:
-                    data = data.repartition(self.num_workers)
+            if data.rdd.getNumPartitions() != self.num_workers:
+                data = data.repartition(self.num_workers)
             if validation_data is not None:
                 invalidInputError(
                     isinstance(validation_data, DataFrame) or
                     isinstance(validation_data, SparkXShards),
                     "validation_data should have the same type with train data")
-                if isinstance(validation_data, DataFrame):
-                    if validation_data.rdd.getNumPartitions() < self.num_workers:
-                        validation_data = validation_data.repartition(self.num_workers)
-                    elif validation_data.rdd.getNumPartitions() > self.num_workers:
-                        validation_data = validation_data.coalesce(self.num_workers)
-                else:
-                    if validation_data.rdd.getNumPartitions() != self.num_workers:
-                        validation_data = validation_data.repartition(self.num_workers)
-                # if validation_data.rdd.getNumPartitions() != self.num_workers:  # type:ignore
-                #     validation_data = validation_data.repartition(self.num_workers)  # type:ignore
+                if validation_data.rdd.getNumPartitions() != self.num_workers:  # type:ignore
+                    validation_data = validation_data.repartition(self.num_workers)  # type:ignore
         data, validation_data = maybe_dataframe_to_xshards(data, validation_data,
                                                            feature_cols, label_cols,
                                                            mode="fit",
