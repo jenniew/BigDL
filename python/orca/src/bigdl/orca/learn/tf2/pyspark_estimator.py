@@ -237,7 +237,8 @@ class SparkTFEstimator():
                                                                             "fit")
             if validation_data is None:
                 def transform_func(iter, init_param, param):
-                    partition_data = list(iter)
+                    # partition_data = list(iter)
+                    partition_data = iter
                     param["data_creator"] = make_data_creator(partition_data)
                     return SparkRunner(**init_param).step(**param)
 

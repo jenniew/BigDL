@@ -51,8 +51,10 @@ class DatasetHandler:
         # will shard the dataset.
         # batch_size won't be used in data_creator for SparkXShards.
         train_dataset = data_creator(config, config["batch_size"])
-        if isinstance(train_dataset, list) and \
-           all([isinstance(x, dict) for x in train_dataset]):
+        import collections
+        if isinstance(train_dataset, collections.Iterable):
+        # if isinstance(train_dataset, list) and \
+        #    all([isinstance(x, dict) for x in train_dataset]):
             invalidInputError(steps_per_epoch is not None,
                               "steps_per_epoch must be provided for xshard")
             train_dataset = self._handle_xshards(train_dataset,
