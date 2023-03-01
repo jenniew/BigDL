@@ -227,6 +227,7 @@ class SparkTFEstimator():
                                                            num_workers=self.num_workers,
                                                            accept_str_col=True,
                                                            shard_size=local_batch_size)
+        print("data is: ",data.rdd.collect()[0])
 
         if isinstance(data, SparkXShards):  # Computation triggered when collect
             if data._get_class_name() == 'pandas.core.frame.DataFrame':
