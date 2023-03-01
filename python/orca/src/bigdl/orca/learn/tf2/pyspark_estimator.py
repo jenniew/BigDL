@@ -228,6 +228,19 @@ class SparkTFEstimator():
                                                            accept_str_col=True,
                                                            shard_size=local_batch_size)
 
+        print(data.rdd.first())
+
+        def transform_func(iter, init_param, param):
+            # partition_data = list(iter)
+            partition_data = iter
+            from bigdl.orca.learn.tf2.spark_runner import data_generator
+            generator = data_generator(iter, local_batch_size, "fit")
+            return generator
+
+        res = data.rdd.barrier().mapPartitions(
+            lambda iter: transform_func(iter, init_params, params)).collect()
+        print(res[0])
+
         if isinstance(data, SparkXShards):  # Computation triggered when collect
             if data._get_class_name() == 'pandas.core.frame.DataFrame':
                 data, validation_data = process_xshards_of_pandas_dataframe(data,
