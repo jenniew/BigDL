@@ -62,7 +62,8 @@ class DatasetHandler:
             train_dataset = self._handle_xshards(train_dataset,
                                                  steps=steps_per_epoch * epochs,
                                                  local_batch_size=local_batch_size,
-                                                 shuffle=True)
+                                                 shuffle=True,
+                                                 mode='fit')
         else:
             train_dataset = self._handle_sharding(train_dataset)
 
@@ -80,7 +81,8 @@ class DatasetHandler:
                 test_dataset = self._handle_xshards(test_dataset,
                                                     steps=validation_steps,
                                                     local_batch_size=local_batch_size,
-                                                    shuffle=False
+                                                    shuffle=False,
+                                                    mode='fit'
                                                     )
             else:
                 test_dataset = self._handle_sharding(test_dataset)
@@ -100,13 +102,14 @@ class DatasetHandler:
             dataset = self._handle_xshards(dataset,
                                            steps=steps,
                                            local_batch_size=local_batch_size,
-                                           shuffle=False)
+                                           shuffle=False,
+                                           mode='evaluate')
         else:
             dataset = self._handle_sharding(dataset)
 
         return dataset
 
-    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle):
+    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle, mode):
         invalidInputError(False, "not implemented")
 
     def _handle_sharding(self, dataset):
@@ -172,7 +175,7 @@ class TFDistributedDatasetHandler2(DatasetHandler):
 
 class TFDistributedDatasetHandler(DatasetHandler):
 
-    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle):
+    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle, mode):
         import tensorflow as tf
 
         data, label = partition_get_data_label(dataset,
@@ -213,7 +216,7 @@ class TFDistributedDatasetHandler(DatasetHandler):
 
 class LocalDatasetHandler(DatasetHandler):
 
-    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle):
+    def _handle_xshards(self, dataset, steps, local_batch_size, shuffle, mode):
         import tensorflow as tf
         data, label = partition_get_data_label(dataset,
                                                allow_tuple=True,
