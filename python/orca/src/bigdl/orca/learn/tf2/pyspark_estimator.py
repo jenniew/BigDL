@@ -237,9 +237,9 @@ class SparkTFEstimator():
         #     generator = data_generator2(iter, local_batch_size, "evaluate")
         #     return generator
 
-        res = data.rdd.mapPartitions(
-            lambda iter: transform_func(iter, init_params, params)).take(1)
-        print(res[0])
+        # res = data.rdd.mapPartitions(
+        #     lambda iter: transform_func(iter, init_params, params)).take(1)
+        # print(res[0])
 
         if isinstance(data, SparkXShards):  # Computation triggered when collect
             if data._get_class_name() == 'pandas.core.frame.DataFrame':
