@@ -141,7 +141,7 @@ class TFDistributedDatasetHandler2(DatasetHandler):
         #                                        allow_tuple=True,
         #                                        allow_list=False)
 
-        generator = data_generator(dataset, local_batch_size, mode)
+        generator = data_generator2(dataset, local_batch_size, mode)
 
         # def dataset_fn(input_context):
         #     # dataset = tf.data.Dataset.from_tensor_slices((data, label))
@@ -334,6 +334,30 @@ def data_generator(iter, batch_size=32, mode="fit"):
                             current_iter = original_iter
                             current_shard = next(current_iter, None)
                             continue
+        break
+
+def data_generator2(iter, batch_size=32, mode="fit"):
+    from itertools import tee
+    original_iter, current_iter = tee(iter)
+    current_shard = next(current_iter, None)
+    offset = 0
+    # loop indefinitely
+    while True:
+        # initial batch data
+        while current_shard is not None:
+            if mode != 'predict':
+                yield current_shard['x'], current_shard['y']
+            else:
+                yield current_shard['x']
+
+                current_shard = next(current_iter, None)
+                if current_shard is None:
+                    # no more data
+                    if mode == 'fit':
+                        # loop to head of iterator for train
+                        current_iter = original_iter
+                        current_shard = next(current_iter, None)
+                        continue
         break
 
 

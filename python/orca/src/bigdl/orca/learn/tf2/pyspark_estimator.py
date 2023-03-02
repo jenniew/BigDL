@@ -233,8 +233,8 @@ class SparkTFEstimator():
         def transform_func(iter, init_param, param):
             # partition_data = list(iter)
             partition_data = iter
-            from bigdl.orca.learn.tf2.spark_runner import data_generator
-            generator = data_generator(iter, local_batch_size, "fit")
+            from bigdl.orca.learn.tf2.spark_runner import data_generator2
+            generator = data_generator2(iter, local_batch_size, "fit")
             return generator
 
         res = data.rdd.barrier().mapPartitions(
