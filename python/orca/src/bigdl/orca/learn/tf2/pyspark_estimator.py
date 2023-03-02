@@ -228,14 +228,14 @@ class SparkTFEstimator():
                                                            accept_str_col=True,
                                                            shard_size=local_batch_size)
 
-        print(data.rdd.first())
+        # print(data.rdd.first())
 
-        def transform_func(iter, init_param, param):
-            # partition_data = list(iter)
-            partition_data = iter
-            from bigdl.orca.learn.tf2.spark_runner import data_generator2
-            generator = data_generator2(iter, local_batch_size, "evaluate")
-            return generator
+        # def transform_func(iter, init_param, param):
+        #     # partition_data = list(iter)
+        #     partition_data = iter
+        #     from bigdl.orca.learn.tf2.spark_runner import data_generator2
+        #     generator = data_generator2(iter, local_batch_size, "evaluate")
+        #     return generator
 
         res = data.rdd.mapPartitions(
             lambda iter: transform_func(iter, init_params, params)).take(1)
