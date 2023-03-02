@@ -234,11 +234,11 @@ class SparkTFEstimator():
             # partition_data = list(iter)
             partition_data = iter
             from bigdl.orca.learn.tf2.spark_runner import data_generator2
-            generator = data_generator2(iter, local_batch_size, "fit")
+            generator = data_generator2(iter, local_batch_size, "evaluate")
             return generator
 
-        res = data.rdd.barrier().mapPartitions(
-            lambda iter: transform_func(iter, init_params, params)).collect()
+        res = data.rdd.mapPartitions(
+            lambda iter: transform_func(iter, init_params, params)).take(1)
         print(res[0])
 
         if isinstance(data, SparkXShards):  # Computation triggered when collect
