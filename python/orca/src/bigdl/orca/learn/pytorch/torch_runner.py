@@ -448,6 +448,12 @@ class TorchRunner(BaseRunner):
         self.metrics_stats = {"train_loss": loss_item, NUM_SAMPLES: get_batchsize(features)}
 
         self.global_step += 1
+        print("global step before: ", self.global_step)
+        train_step_tensor = torch.tensor(self.global_step)
+        invalidInputError(self.backend != "horovod", "Sanity check failed!")
+        self.dist_backend.all_reduce_min(train_step_tensor)
+        self.global_step = train_step_tensor.item()
+        print("global step after sync: ", self.global_step)
 
         self.call_hook(callbacks=callbacks, fn_name="after_train_iter")
 
