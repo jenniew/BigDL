@@ -66,13 +66,21 @@ class LifeCycle(metaclass=ABCMeta):
 
     def _init_torch_ddp(self, tcp_store_host, tcp_store_port, world_rank,
                         world_size):
+        import os
+        import oneccl_bindings_for_pytorch
+        os.environ['MASTER_ADDR'] = tcp_store_host
+        os.environ['MASTER_PORT'] = str(tcp_store_port)
         """A runner will contain `rank`, `backend` and `size` after setup_torch_distribute."""
         import torch.distributed as dist
-        client_store = dist.TCPStore(tcp_store_host, tcp_store_port, -1, False,
-                                     timeout=dist.constants.default_pg_timeout)
+        # client_store = dist.TCPStore(tcp_store_host, tcp_store_port, -1, False,
+        #                              timeout=dist.constants.default_pg_timeout)
+        # dist.init_process_group(
+        #     backend="gloo",
+        #     store=client_store,
+        #     rank=world_rank,
+        #     world_size=world_size)
         dist.init_process_group(
-            backend="gloo",
-            store=client_store,
+            backend="ccl",
             rank=world_rank,
             world_size=world_size)
         self.backend = "torch-distributed"
