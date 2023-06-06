@@ -285,7 +285,7 @@ class PyTorchPySparkEstimator(BaseEstimator):
                               "or load a saved model.")
 
         sc = OrcaContext.get_spark_context()
-        _ = self.create_tcpstore_server()
+        # _ = self.create_tcpstore_server()
         cluster_info = self._get_cluster_info(sc)
         if self.state_dict["epoch"] == 0:
             self.state_dict = None
