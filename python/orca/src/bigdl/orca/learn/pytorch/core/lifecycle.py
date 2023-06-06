@@ -83,6 +83,7 @@ class LifeCycle(metaclass=ABCMeta):
             backend="ccl",
             rank=world_rank,
             world_size=world_size)
+        print("init_process_group successfully.")
         self.backend = "torch-distributed"
 
     def with_sampler(self, loader, shuffle=True):
