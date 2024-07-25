@@ -4,7 +4,7 @@
 
 *See the demos of running LLaMA2-7B (English) and ChatGLM-3-6B (Chinese) on an Intel Core Ultra laptop below.*
 
-<table border="1" width="100%">
+<table width="100%">
   <tr>
     <td align="center" width="50%">English</td>
     <td align="center" width="50%">简体中文</td>
@@ -12,17 +12,28 @@
   <tr>
     <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-en.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-en.png"/></a></td>
     <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-cn.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-cn.png"/></a></td>
-</tr>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-en.mp4">English</a> or <a href="https://llm-assets.readthedocs.io/en/latest/_images/langchain-chatchat-cn.mp4">简体中文</a> to watch the demo videos.</td>
+  </tr>
 </table>
 
 > [!NOTE]
 > You can change the UI language in the left-side menu. We currently support **English** and **简体中文** (see video demos below).
 
+## Table of Contents
+- [Langchain-Chatchat Architecture](./chatchat_quickstart.md#langchain-chatchat-architecture)
+- [Install and Run](./chatchat_quickstart.md#install-and-run)
+- [How to Use RAG](./chatchat_quickstart.md#how-to-use-rag)
+- [Troubleshooting & Tips](./chatchat_quickstart.md#troubleshooting--tips)
+
+
 ## Langchain-Chatchat Architecture
 
-See the Langchain-Chatchat architecture below ([source](https://github.com/chatchat-space/Langchain-Chatchat/blob/master/img/langchain%2Bchatglm.png)).
+See the Langchain-Chatchat architecture below ([source](https://github.com/chatchat-space/Langchain-Chatchat/blob/master/docs/img/langchain%2Bchatglm.png)).
 
 <img src="https://llm-assets.readthedocs.io/en/latest/_images/langchain-arch.png" height="50%" />
+
 
 ## Quickstart
 
@@ -69,7 +80,7 @@ You can now click `Dialogue` on the left-side menu to return to the chat UI. The
 
 For more information about how to use Langchain-Chatchat, refer to Official Quickstart guide in [English](https://github.com/chatchat-space/Langchain-Chatchat/blob/master/README_en.md#), [Chinese](https://github.com/chatchat-space/Langchain-Chatchat/blob/master/README.md#), or the [Wiki](https://github.com/chatchat-space/Langchain-Chatchat/wiki/).
 
-### Trouble Shooting & Tips
+### Troubleshooting & Tips
 
 #### 1. Version Compatibility
 

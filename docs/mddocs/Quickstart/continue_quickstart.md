@@ -5,7 +5,21 @@
 
 Below is a demo of using `Continue` with [CodeQWen1.5-7B](https://huggingface.co/Qwen/CodeQwen1.5-7B-Chat) running on Intel A770 GPU. This demo illustrates how a programmer used `Continue` to find a solution for the [Kaggle's _Titanic_ challenge](https://www.kaggle.com/competitions/titanic/), which involves asking `Continue` to complete the code for model fitting, evaluation, hyper parameter tuning, feature engineering, and explain generated code.
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/continue_demo_ollama_backend_arc.png)](https://llm-assets.readthedocs.io/en/latest/_images/continue_demo_ollama_backend_arc.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/continue_demo_ollama_backend_arc.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/continue_demo_ollama_backend_arc.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/continue_demo_ollama_backend_arc.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
+
+## Table of Contents
+- [Install and Run Ollama Serve](./continue_quickstart.md#1-install-and-run-ollama-serve)
+- [Pull and Prepare the Model](./continue_quickstart.md#2-pull-and-prepare-the-model)
+- [Install `Continue` Extension](./continue_quickstart.md#3-install-continue-extension)
+- [`Continue` Configuration](./continue_quickstart.md#4-continue-configuration)
+- [How to Use `Continue`](./continue_quickstart.md#5-how-to-use-continue)
 
 ## Quickstart
 

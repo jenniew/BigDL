@@ -4,7 +4,23 @@
 
 See the demo of finetuning LLaMA2-7B on Intel Arc GPU below.
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/axolotl-qlora-linux-arc.png)](https://llm-assets.readthedocs.io/en/latest/_images/axolotl-qlora-linux-arc.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/axolotl-qlora-linux-arc.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/axolotl-qlora-linux-arc.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/axolotl-qlora-linux-arc.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
+
+## Table of Contents
+- [Prerequisites](./axolotl_quickstart.md#0-prerequisites)
+- [Install IPEX-LLM for Axolotl](./axolotl_quickstart.md#1-install-ipex-llm-for-axolotl)
+- [Example: Finetune Llama-2-7B with Axolotl](./axolotl_quickstart.md#2-example-finetune-llama-2-7b-with-axolotl)
+- [Finetune Llama-3-8B (Experimental)](./axolotl_quickstart.md#3-finetune-llama-3-8b-experimental)
+- [Troubleshooting](./axolotl_quickstart.md#troubleshooting)
+
+
 
 ## Quickstart
 

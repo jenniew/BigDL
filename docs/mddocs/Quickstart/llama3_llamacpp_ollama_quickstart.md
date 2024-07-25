@@ -6,7 +6,20 @@ Now, you can easily run Llama 3 on Intel GPU using `llama.cpp` and `Ollama` with
 
 See the demo of running Llama-3-8B-Instruct on Intel Arc GPU using `Ollama` below.
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/ollama-llama3-linux-arc.png)](https://llm-assets.readthedocs.io/en/latest/_images/ollama-llama3-linux-arc.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama-llama3-linux-arc.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/ollama-llama3-linux-arc.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama-llama3-linux-arc.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
+
+## Table of Contents
+- [Run Llama 3 using llama.cpp](./llama3_llamacpp_ollama_quickstart.md#1-run-llama-3-using-llamacpp)
+- [Run Llama3 using Ollama](./llama3_llamacpp_ollama_quickstart.md#2-run-llama3-using-ollama)
+
+
 
 ## Quick Start
 This quickstart guide walks you through how to run Llama 3 on Intel GPU using `llama.cpp` / `Ollama` with IPEX-LLM.
@@ -38,6 +51,9 @@ To use GPU acceleration, several environment variables are required or recommend
   ```bash
   source /opt/intel/oneapi/setvars.sh
   export SYCL_CACHE_PERSISTENT=1
+  export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+  # [optional] if you want to run on single GPU, use below command to limit GPU may improve performance
+  export ONEAPI_DEVICE_SELECTOR=level_zero:0
   ```
 
 - For **Windows users**:
@@ -46,14 +62,11 @@ To use GPU acceleration, several environment variables are required or recommend
 
   ```cmd
   set SYCL_CACHE_PERSISTENT=1
+  set SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
   ```
 
 > [!TIP]
-> If your local LLM is running on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), it is recommended to additionaly set the following environment variable for optimal performance:
->
-> ```bash
-> export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
-> ```
+> When your machine has multi GPUs and you want to run on one of them, you need to set `ONEAPI_DEVICE_SELECTOR=level_zero:[gpu_id]`, here `[gpu_id]` varies based on your requirement. For more details, you can refer to [this section](../Overview/KeyFeatures/multi_gpus_selection.md#2-oneapi-device-selector).
 
 ##### Run llama3
 
@@ -118,6 +131,9 @@ Launch the Ollama service:
   export OLLAMA_NUM_GPU=999
   source /opt/intel/oneapi/setvars.sh
   export SYCL_CACHE_PERSISTENT=1
+  export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+  # [optional] if you want to run on single GPU, use below command to limit GPU may improve performance
+  export ONEAPI_DEVICE_SELECTOR=level_zero:0
 
   ./ollama serve
   ```
@@ -131,20 +147,19 @@ Launch the Ollama service:
   set ZES_ENABLE_SYSMAN=1
   set OLLAMA_NUM_GPU=999
   set SYCL_CACHE_PERSISTENT=1
+  set SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
 
   ollama serve
   ```
 
-> [!TIP]
-> If your local LLM is running on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), it is recommended to additionaly set the following environment variable for optimal performance before executing `ollama serve`:
->
-> ```bash
-> export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
-> ```
 
 > [!NOTE]
 >
 > To allow the service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` instead of just `./ollama serve`.
+
+> [!TIP]
+> When your machine has multi GPUs and you want to run on one of them, you need to set `ONEAPI_DEVICE_SELECTOR=level_zero:[gpu_id]`, here `[gpu_id]` varies based on your requirement. For more details, you can refer to [this section](../Overview/KeyFeatures/multi_gpus_selection.md#2-oneapi-device-selector).
+
 
 ##### 2.2.2 Using Ollama Run Llama3
 

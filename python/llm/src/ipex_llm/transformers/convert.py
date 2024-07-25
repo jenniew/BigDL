@@ -70,12 +70,12 @@ def is_vllm_available():
     global _IS_VLLM_AVAILABLE
     if _IS_VLLM_AVAILABLE is not None:
         return _IS_VLLM_AVAILABLE
-    reqs = subprocess.check_output([sys.executable, '-m', 'pip', 'list'])
-    installed_packages = [r.decode().split('  ')[0] for r in reqs.split()]
-    if 'vllm' in installed_packages:
-        _IS_VLLM_AVAILABLE = True
-    else:
-        _IS_VLLM_AVAILABLE = False
+    import sys
+    original_path = sys.path
+    # Temporally remove current directory
+    sys.path = [p for p in sys.path if p != '']
+    _IS_VLLM_AVAILABLE = importlib.util.find_spec("vllm") is not None
+    sys.path = original_path
     return _IS_VLLM_AVAILABLE
 
 
@@ -146,28 +146,36 @@ def is_linear_module(module):
         global _VLLM_VERSION
         if _VLLM_VERSION is None:
             _VLLM_VERSION = get_package_version('vllm')
-        if 'xpu' in _VLLM_VERSION:
-            # For vllm xpu
-            from vllm.model_executor.parallel_utils.parallel_state import (
-                get_tensor_model_parallel_group,
-                get_tensor_model_parallel_world_size
-            )
-            if torch.distributed.is_initialized():
-                tp_size = get_tensor_model_parallel_world_size()
-            else:
-                tp_size = 1
-        else:
-            # For vllm cpu
-            tp_size = 1
-
         from vllm.model_executor.layers.linear import (
             ColumnParallelLinear, RowParallelLinear, QKVParallelLinear, MergedColumnParallelLinear
         )
-
+        from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
         VLLM_LINEAR_LIST = [
-            ColumnParallelLinear, RowParallelLinear, QKVParallelLinear, MergedColumnParallelLinear
+            ColumnParallelLinear, RowParallelLinear, QKVParallelLinear,
+            MergedColumnParallelLinear,
         ]
+        if 'xpu' in _VLLM_VERSION:
+            VLLM_LINEAR_LIST.append(ParallelLMHead)
         if is_module_in_classes(module, VLLM_LINEAR_LIST):
+            if 'xpu' in _VLLM_VERSION:
+                # For vllm xpu
+                from vllm.model_executor.parallel_utils.parallel_state import (
+                    get_tensor_model_parallel_group,
+                    get_tensor_model_parallel_world_size
+                )
+                if torch.distributed.is_initialized():
+                    tp_size = get_tensor_model_parallel_world_size()
+                else:
+                    tp_size = 1
+            else:
+                # For vllm cpu
+                tp_size = 1
+            if isinstance(module, ParallelLMHead) and 'xpu' in _VLLM_VERSION:
+                in_features = module.embedding_dim
+                out_features = module.num_embeddings_per_partition
+                result = True
+                mp_group = None
+                return result, (in_features, out_features, mp_group)
             in_features = module.input_size
             out_features = module.output_size
             result = True
@@ -302,7 +310,8 @@ def use_scale_search(model_config, qtype):
 
 def _replace_with_low_bit_linear(model, qtype, modules_to_not_convert=None,
                                  convert_shape_only=False,
-                                 cpu_embedding=False, prefix_name='',
+                                 cpu_embedding=False,
+                                 prefix_name='',
                                  imatrix_data=None, embedding_qtype=None,
                                  model_config=None, torch_dtype=torch.float32,
                                  enable_xetla=False,
@@ -312,7 +321,7 @@ def _replace_with_low_bit_linear(model, qtype, modules_to_not_convert=None,
                                  ):
     from ipex_llm.transformers.low_bit_linear import LowBitLinear, FP4Params, \
         FP16Linear, BF16Linear
-    from ipex_llm.transformers.embedding import LLMEmbedding, LowBitEmbedding
+    from ipex_llm.transformers.embedding import CPUEmbedding, DiskEmbedding, LowBitEmbedding
     has_been_replaced = False
 
     for name, module in model.named_children():
@@ -328,9 +337,11 @@ def _replace_with_low_bit_linear(model, qtype, modules_to_not_convert=None,
             optimize_lm_head = False
             if is_lm_head(name, model_config, out_features):
                 model_type = getattr(model_config, "model_type", None)
-                if model_type in ["gptj", "llama"] and os.environ.get("BIGDL_OPTIMIZE_LM_HEAD",
-                                                                      None) == "1":
-                    optimize_lm_head = True
+                if model_type in ["gptj", "llama", "qwen2"]:
+                    if os.environ.get("IPEX_LLM_LAST_LM_HEAD", None) is not None:
+                        optimize_lm_head = os.environ.get("IPEX_LLM_LAST_LM_HEAD", None) == "1"
+                    elif os.environ.get("IPEX_LLM_LOW_MEM", None) is not None:
+                        optimize_lm_head = os.environ.get("IPEX_LLM_LOW_MEM", None) == "1"
             with init_empty_weights():
                 new_linear = None
                 is_gptq = is_gptq_linear(module)
@@ -458,48 +469,13 @@ def _replace_with_low_bit_linear(model, qtype, modules_to_not_convert=None,
                     model._modules[name].requires_grad_(False)
 
                     module.weight = None
+        # skip user-defined Embedding layer
         elif cpu_embedding and type(module) == nn.Embedding:
-            # skip user-defined Embedding layer
-            model._modules[name] = LLMEmbedding(
-                num_embeddings=module.num_embeddings,
-                embedding_dim=module.embedding_dim,
-                padding_idx=module.padding_idx,
-                max_norm=module.max_norm,
-                norm_type=module.norm_type,
-                scale_grad_by_freq=module.scale_grad_by_freq,
-                sparse=module.sparse,
-                _weight=module.weight.data,
-            )
-        elif type(module) == nn.Embedding and embedding_qtype is not None:
-            if torch_dtype == "auto":
-                torch_dtype = torch.float32
-            q_embedding = LowBitEmbedding(
-                num_embeddings=module.num_embeddings,
-                embedding_dim=module.embedding_dim,
-                padding_idx=module.padding_idx,
-                max_norm=module.max_norm,
-                norm_type=module.norm_type,
-                scale_grad_by_freq=module.scale_grad_by_freq,
-                sparse=module.sparse,
-                _weight=module.weight.data,
-                qtype=embedding_qtype,
-                torch_dtype=torch_dtype
-            )
-            device = module.weight.data.device
-            # Copy the weights
-            paramsLowBit = FP4Params(data=module.weight.data,
-                                     requires_grad=False,
-                                     quantized=False,
-                                     _shape=None,
-                                     convert_shape_only=convert_shape_only,
-                                     qtype=embedding_qtype,
-                                     in_features=module.embedding_dim).to(device)
-            q_embedding._parameters['weight'] = paramsLowBit
-            model._modules[name] = q_embedding
-            # Force requires grad to False to avoid unexpected errors
-            model._modules[name].requires_grad_(False)
-            module.weight = None
-
+            model._modules[name] = CPUEmbedding.from_embedding(module)
+        elif embedding_qtype is not None and type(module) == nn.Embedding:
+            model._modules[name] = LowBitEmbedding.from_embedding(module,
+                                                                  convert_shape_only,
+                                                                  embedding_qtype)
         # Remove the last key for recursion
         if len(list(module.children())) > 0:
             _, _flag = _replace_with_low_bit_linear(
@@ -666,7 +642,7 @@ def replace_with_low_bit_linear_for_module(model, qtype, module_name=None,
     return model
 
 
-def _optimize_pre(model):
+def _optimize_pre(model, qtype=None):
     try:
         from sentence_transformers.SentenceTransformer import SentenceTransformer
         if isinstance(model, SentenceTransformer):
@@ -733,10 +709,18 @@ def _optimize_pre(model):
         model.apply(split_mlp)
     # for qwen2
     if model.config.model_type == "qwen2":
-        from ipex_llm.transformers.models.qwen2 import merge_qkv
-        model.apply(merge_qkv)
-        from ipex_llm.transformers.models.qwen2 import padding_mlp
-        model.apply(padding_mlp)
+        # Skip merge_qkv and padding_mlp if quant_method is 'gptq'
+        should_apply_merge_qkv = (
+            not hasattr(model.config, "quantization_config") or
+            not hasattr(model.config.quantization_config, "quant_method") or
+            model.config.quantization_config.quant_method != "gptq"
+        )
+        if should_apply_merge_qkv:
+            from ipex_llm.transformers.models.qwen2 import merge_qkv
+            model.apply(merge_qkv)
+            if qtype != ggml_tensor_qtype["fp6"]:
+                from ipex_llm.transformers.models.qwen2 import padding_mlp
+                model.apply(padding_mlp)
     if model.config.model_type == "qwen2_moe":
         from ipex_llm.transformers.models.qwen2_moe import merge_qkv
         model.apply(merge_qkv)
@@ -758,7 +742,8 @@ def _optimize_pre(model):
 
 def ggml_convert_low_bit(model, qtype, optimize_model=True,
                          convert_shape_only=False, device="cpu",
-                         modules_to_not_convert=None, cpu_embedding=False,
+                         modules_to_not_convert=None,
+                         cpu_embedding=False,
                          lightweight_bmm=False, torch_dtype="auto",
                          imatrix_data=None,
                          embedding_qtype=None,
@@ -787,7 +772,7 @@ def ggml_convert_low_bit(model, qtype, optimize_model=True,
         return model
 
     if optimize_model:
-        model = _optimize_pre(model)
+        model = _optimize_pre(model, qtype)
 
     act_order = False
     if getattr(model, "quantization_method", None) == "gptq":
@@ -862,10 +847,10 @@ def convert_bigdl_other_module(model, dtype):
 
 
 def convert_forward(m, target_m, new_forward):
+    if m.__class__ == target_m:
+        bound_method = new_forward.__get__(m, m.__class__)
+        setattr(m, "forward", bound_method)
     for _, sub_m in m.named_children():
-        if sub_m.__class__ == target_m:
-            bound_method = new_forward.__get__(sub_m, sub_m.__class__)
-            setattr(sub_m, "forward", bound_method)
         convert_forward(sub_m, target_m, new_forward)
 
 
@@ -980,19 +965,32 @@ def _optimize_post(model, lightweight_bmm=False):
         convert_forward(model,
                         transformers.models.llama.modeling_llama.LlamaDecoderLayer,
                         llama_decoder_forward)
+
         if version.parse(trans_version) >= version.parse("4.36.0"):
             # transformers version >= 4.36.0
             from ipex_llm.transformers.models.llama import llama_attention_forward_4_38
             if version.parse(trans_version) >= version.parse("4.38.0"):
-                from ipex_llm.transformers.models.llama import llama_model_forward_4_38
-                convert_forward(
-                    model,
-                    transformers.models.llama.modeling_llama.LlamaModel,
-                    llama_model_forward_4_38)
-                convert_forward(
-                    model,
-                    transformers.models.llama.modeling_llama.LlamaAttention,
-                    llama_attention_forward_4_38)
+                if version.parse(trans_version) >= version.parse("4.41.0"):
+                    from ipex_llm.transformers.models.llama import llama_model_forward_4_41
+                    from ipex_llm.transformers.models.llama import llama_attention_forward_4_41
+                    convert_forward(
+                        model,
+                        transformers.models.llama.modeling_llama.LlamaModel,
+                        llama_model_forward_4_41)
+                    convert_forward(
+                        model,
+                        transformers.models.llama.modeling_llama.LlamaAttention,
+                        llama_attention_forward_4_41)
+                else:
+                    from ipex_llm.transformers.models.llama import llama_model_forward_4_38
+                    convert_forward(
+                        model,
+                        transformers.models.llama.modeling_llama.LlamaModel,
+                        llama_model_forward_4_38)
+                    convert_forward(
+                        model,
+                        transformers.models.llama.modeling_llama.LlamaAttention,
+                        llama_attention_forward_4_38)
             else:
                 from ipex_llm.transformers.models.llama import llama_model_forward_4_36
                 convert_forward(
@@ -1038,7 +1036,7 @@ def _optimize_post(model, lightweight_bmm=False):
     if model.config.architectures is not None \
        and model.config.architectures[0] in ["ChatGLMModel", "ChatGLMForConditionalGeneration"]:
         if hasattr(model.config, 'padded_vocab_size') and \
-                model.config.padded_vocab_size == 65024:
+                model.config.padded_vocab_size in [65024, 64896]:
             # chatglm2-6b, chatglm2-6b-32k, chatglm3-6b, chatglm3-6b-32k, chatglm3-6b-128k
             modeling_module_name = model.__class__.__module__
             module = importlib.import_module(modeling_module_name)
@@ -1099,6 +1097,7 @@ def _optimize_post(model, lightweight_bmm=False):
                 from ipex_llm.transformers.models.chatglm4 import chatglm4_attention_forward
                 from ipex_llm.transformers.models.chatglm4 import chatglm4_model_forward
                 from ipex_llm.transformers.models.chatglm2 import chatglm_rms_norm_forward
+                from ipex_llm.transformers.models.chatglm4 import chatglm4_encoder_forward
                 convert_forward(model,
                                 module.SelfAttention,
                                 chatglm4_attention_forward)
@@ -1108,6 +1107,9 @@ def _optimize_post(model, lightweight_bmm=False):
                 convert_forward(model,
                                 module.RMSNorm,
                                 chatglm_rms_norm_forward)
+                convert_forward(model,
+                                module.GLMTransformer,
+                                chatglm4_encoder_forward)
 
     elif "mpt" in model.config.model_type:
         if model.config.architectures is not None:
@@ -1234,11 +1236,19 @@ def _optimize_post(model, lightweight_bmm=False):
     elif model.config.model_type == "internlmxcomposer2":
         modeling_module_name = model.model.__class__.__module__
         module = importlib.import_module(modeling_module_name)
-        from ipex_llm.transformers.models.internlm import internlm_xcomposser2_attention_forward
+        from ipex_llm.transformers.models.internlm import (
+            internlm_xcomposser2_attention_forward,
+            internlm_xcomposser2_mlp_forward,
+            internlm_xcomposser2_model_forward_wrapper,
+            internlm_xcomposser2_chat
+        )
         convert_forward(model, module.InternLM2Attention, internlm_xcomposser2_attention_forward)
-        from ipex_llm.transformers.models.internlm import internlm_xcomposser2_mlp_forward
         convert_forward(model, module.InternLM2MLP, internlm_xcomposser2_mlp_forward)
-        from ipex_llm.transformers.models.internlm import internlm_xcomposser2_chat
+        convert_forward(model, module.InternLM2RMSNorm, llama_rms_norm_forward)
+        internlm_xcomposser2_model_forward = internlm_xcomposser2_model_forward_wrapper(
+            module.InternLM2Model.forward
+        )
+        convert_forward(model, module.InternLM2Model, internlm_xcomposser2_model_forward)
         model.chat = MethodType(internlm_xcomposser2_chat, model)
     elif model.config.model_type == "qwen":
         if hasattr(model.config, "visual"):
@@ -1246,10 +1256,14 @@ def _optimize_post(model, lightweight_bmm=False):
             modeling_module_name = model.__class__.__module__
             module = importlib.import_module(modeling_module_name)
             from ipex_llm.transformers.models.qwen_vl import qwen_attention_forward_vl
+            from ipex_llm.transformers.models.qwen_vl import qwen_vl_model_forward
             convert_forward(model,
                             module.QWenAttention,
                             qwen_attention_forward_vl
                             )
+            convert_forward(model,
+                            module.QWenModel,
+                            qwen_vl_model_forward)
         else:
             # for Qwen-7B and Qwen-14B
             modeling_module_name = model.__class__.__module__
@@ -1285,15 +1299,20 @@ def _optimize_post(model, lightweight_bmm=False):
         module = importlib.import_module(modeling_module_name)
         from ipex_llm.transformers.models.qwen2 import qwen2_model_forward
         from ipex_llm.transformers.models.qwen2 import qwen2_attention_forward
+        from ipex_llm.transformers.models.qwen2 import qwen2_causal_lm_forward
+        from ipex_llm.transformers.models.qwen2 import qwen2_mlp_forward
         convert_forward(model,
                         module.Qwen2Model,
                         qwen2_model_forward)
+        convert_forward(model,
+                        module.Qwen2ForCausalLM,
+                        qwen2_causal_lm_forward)
         convert_forward(model,
                         module.Qwen2RMSNorm,
                         llama_rms_norm_forward)
         convert_forward(model,
                         module.Qwen2MLP,
-                        llama_mlp_forward)
+                        qwen2_mlp_forward)
         convert_forward(model,
                         module.Qwen2Attention,
                         qwen2_attention_forward)
@@ -1306,10 +1325,14 @@ def _optimize_post(model, lightweight_bmm=False):
         module = importlib.import_module(modeling_module_name)
         from ipex_llm.transformers.models.qwen2_moe import qwen2moe_moeblock_forward
         from ipex_llm.transformers.models.qwen2_moe import qwen2moe_model_forward
+        from ipex_llm.transformers.models.qwen2_moe import qwen2_moe_causal_lm_forward
         from ipex_llm.transformers.models.qwen2 import qwen2_attention_forward
         convert_forward(model,
                         module.Qwen2MoeModel,
                         qwen2moe_model_forward)
+        convert_forward(model,
+                        module.Qwen2MoeForCausalLM,
+                        qwen2_moe_causal_lm_forward)
         convert_forward(model,
                         module.Qwen2MoeRMSNorm,
                         llama_rms_norm_forward)
@@ -1327,13 +1350,23 @@ def _optimize_post(model, lightweight_bmm=False):
                         qwen2_attention_forward)
     elif model.config.model_type == "cohere":
         # for CohereForAI/c4ai-command-r-v01
+        invalidInputError(version.parse(trans_version) >= version.parse("4.40.0"),
+                          "Please upgrade transformers to 4.40.0 or higher version "
+                          "to run Mixtral models.")
         modeling_module_name = model.__class__.__module__
         module = importlib.import_module(modeling_module_name)
+        if version.parse(trans_version) >= version.parse("4.41.0"):
+            from ipex_llm.transformers.models.cohere import cohere_model_forward_4_41
+            convert_forward(model,
+                            module.CohereModel,
+                            cohere_model_forward_4_41)
+        else:
+            from ipex_llm.transformers.models.cohere import cohere_model_forward
+            convert_forward(model,
+                            module.CohereModel,
+                            cohere_model_forward)
+
         from ipex_llm.transformers.models.cohere import cohere_attention_forward
-        from ipex_llm.transformers.models.cohere import cohere_model_forward
-        convert_forward(model,
-                        module.CohereModel,
-                        cohere_model_forward)
         convert_forward(model,
                         module.CohereAttention,
                         cohere_attention_forward)
@@ -1445,21 +1478,39 @@ def _optimize_post(model, lightweight_bmm=False):
                                 module.MistralMLP,
                                 llama_mlp_forward)
     elif model.config.model_type == "gemma":
+        invalidInputError(version.parse(trans_version) >= version.parse("4.38.0"),
+                          "Please upgrade transformers to 4.38.0 or higher version "
+                          "to run Mixtral models.")
         modeling_module_name = model.__class__.__module__
         module = importlib.import_module(modeling_module_name)
-        from ipex_llm.transformers.models.gemma import gemma_attention_forward
+        if version.parse(trans_version) >= version.parse("4.39.0"):
+            from ipex_llm.transformers.models.gemma import gemma_attention_forward_4_39
+            convert_forward(model,
+                            module.GemmaAttention,
+                            gemma_attention_forward_4_39
+                            )
+        else:
+            from ipex_llm.transformers.models.gemma import gemma_attention_forward
+            convert_forward(model,
+                            module.GemmaAttention,
+                            gemma_attention_forward,
+                            )
         from ipex_llm.transformers.models.gemma import gemma_rms_norm_forward
         from ipex_llm.transformers.models.gemma import gemma_mlp_forward
-        convert_forward(model,
-                        module.GemmaAttention,
-                        gemma_attention_forward,
-                        )
         convert_forward(model,
                         module.GemmaRMSNorm,
                         gemma_rms_norm_forward)
         convert_forward(model,
                         module.GemmaMLP,
                         gemma_mlp_forward)
+
+    elif model.config.model_type == "gemma2":
+        modeling_module_name = model.__class__.__module__
+        module = importlib.import_module(modeling_module_name)
+        from ipex_llm.transformers.models.gemma import gemma_rms_norm_forward
+        convert_forward(model,
+                        module.GemmaRMSNorm,
+                        gemma_rms_norm_forward)
     elif model.config.model_type == "Yi":
         modeling_module_name = model.__class__.__module__
         module = importlib.import_module(modeling_module_name)
@@ -1630,19 +1681,27 @@ def _optimize_post(model, lightweight_bmm=False):
                         stablelm_model_forward
                         )
     elif model.config.model_type == 'minicpm':
-        from ipex_llm.transformers.models.minicpm import minicpm_attention_forward
-        from ipex_llm.transformers.models.minicpm import minicpm_model_forward
         modeling_module_name = model.__class__.__module__
         module = importlib.import_module(modeling_module_name)
+        if version.parse(trans_version) >= version.parse("4.39.0"):
+            from ipex_llm.transformers.models.minicpm import minicpm_attention_forward_4_39
+            convert_forward(model,
+                            module.MiniCPMAttention,
+                            minicpm_attention_forward_4_39)
+        else:
+            from ipex_llm.transformers.models.minicpm import minicpm_attention_forward
+            convert_forward(model,
+                            module.MiniCPMAttention,
+                            minicpm_attention_forward)
+        from ipex_llm.transformers.models.minicpm import minicpm_model_forward
+
         convert_forward(model,
                         module.MiniCPMMLP,
                         llama_mlp_forward)
         convert_forward(model,
                         module.MiniCPMRMSNorm,
                         llama_rms_norm_forward)
-        convert_forward(model,
-                        module.MiniCPMAttention,
-                        minicpm_attention_forward)
+
         convert_forward(model,
                         module.MiniCPMModel,
                         minicpm_model_forward)

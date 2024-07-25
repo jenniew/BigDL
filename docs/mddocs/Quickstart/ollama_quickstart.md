@@ -4,16 +4,30 @@
 
 See the demo of running LLaMA2-7B on Intel Arc GPU below.
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/ollama-linux-arc.png)](https://llm-assets.readthedocs.io/en/latest/_images/ollama-linux-arc.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama-linux-arc.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/ollama-linux-arc.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama-linux-arc.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
 
 > [!NOTE]
 > `ipex-llm[cpp]==2.5.0b20240527` is consistent with [v0.1.34](https://github.com/ollama/ollama/releases/tag/v0.1.34) of ollama.
 >
 > Our current version is consistent with [v0.1.39](https://github.com/ollama/ollama/releases/tag/v0.1.39) of ollama.
 
+## Table of Contents
+- [Install IPEX-LLM for Ollama](./ollama_quickstart.md#1-install-ipex-llm-for-ollama)
+- [Initialize Ollama](./ollama_quickstart.md#2-initialize-ollama)
+- [Run Ollama Serve](./ollama_quickstart.md#3-run-ollama-serve)
+- [Pull Model](./ollama_quickstart.md#4-pull-model)
+- [Using Ollama](./ollama_quickstart.md#5-using-ollama)
+
 ## Quickstart
 
-### 1 Install IPEX-LLM for Ollama
+### 1. Install IPEX-LLM for Ollama
 
 IPEX-LLM's support for `ollama` now is available for Linux system and Windows system.
 
@@ -46,7 +60,7 @@ Activate the `llm-cpp` conda environment and initialize Ollama by executing the 
 
 **Now you can use this executable file by standard ollama's usage.**
 
-### 3 Run Ollama Serve
+### 3. Run Ollama Serve
 
 You may launch the Ollama service as below:
 
@@ -58,6 +72,9 @@ You may launch the Ollama service as below:
   export ZES_ENABLE_SYSMAN=1
   source /opt/intel/oneapi/setvars.sh
   export SYCL_CACHE_PERSISTENT=1
+  export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+  # [optional] if you want to run on single GPU, use below command to limit GPU may improve performance
+  export ONEAPI_DEVICE_SELECTOR=level_zero:0
 
   ./ollama serve
   ```
@@ -71,6 +88,7 @@ You may launch the Ollama service as below:
   set no_proxy=localhost,127.0.0.1
   set ZES_ENABLE_SYSMAN=1
   set SYCL_CACHE_PERSISTENT=1
+  set SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
 
   ollama serve
   ```
@@ -78,15 +96,11 @@ You may launch the Ollama service as below:
 > [!NOTE]
 > Please set environment variable `OLLAMA_NUM_GPU` to `999` to make sure all layers of your model are running on Intel GPU, otherwise, some layers may run on CPU.
 
-> [!TIP]
-> If your local LLM is running on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), it is recommended to additionaly set the following environment variable for optimal performance before executing `ollama serve`:
->
-> ```bash
-> export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
-> ```
-
 > [!NOTE]
 > To allow the service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` instead of just `./ollama serve`.
+
+> [!TIP]
+> When your machine has multi GPUs and you want to run on one of them, you need to set `ONEAPI_DEVICE_SELECTOR=level_zero:[gpu_id]`, here `[gpu_id]` varies based on your requirement. For more details, you can refer to [this section](../Overview/KeyFeatures/multi_gpus_selection.md#2-oneapi-device-selector).
 
 The console will display messages similar to the following:
 
@@ -95,7 +109,7 @@ The console will display messages similar to the following:
 </a>
 
 
-### 4 Pull Model
+### 4. Pull Model
 Keep the Ollama service on and open another terminal and run `./ollama pull <model_name>` in Linux (`ollama.exe pull <model_name>` in Windows) to automatically pull a model. e.g. `dolphin-phi:latest`:
 
 <a href="https://llm-assets.readthedocs.io/en/latest/_images/ollama_pull.png" target="_blank">
@@ -103,7 +117,7 @@ Keep the Ollama service on and open another terminal and run `./ollama pull <mod
 </a>
 
 
-### 5 Using Ollama
+### 5. Using Ollama
 
 #### Using Curl 
 

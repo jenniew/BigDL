@@ -19,7 +19,7 @@ import torch
 import time
 import argparse
 
-from ipex_llm.transformers import AutoModelForCausalLM, init_pipeline_parallel
+from ipex_llm.transformers import AutoModel, AutoModelForCausalLM, init_pipeline_parallel
 from transformers import AutoTokenizer
 
 init_pipeline_parallel()
@@ -34,20 +34,30 @@ if __name__ == '__main__':
                         help='Prompt to infer')
     parser.add_argument('--n-predict', type=int, default=32,
                         help='Max tokens to predict')
+    parser.add_argument('--low-bit', type=str, default='sym_int4', help='The quantization type the model will convert to.')
     parser.add_argument('--gpu-num', type=int, default=2, help='GPU number to use')
 
     args = parser.parse_args()
     model_path = args.repo_id_or_model_path
+    low_bit = args.low_bit
 
     # Load model in 4 bit,
     # which convert the relevant layers in the model into INT4 format
-    model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                 load_in_4bit=True,
-                                                 optimize_model=True,
-                                                 trust_remote_code=True,
-                                                 use_cache=True,
-                                                 torch_dtype=torch.float16,
-                                                 pipeline_parallel_stages=args.gpu_num)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                     load_in_low_bit=low_bit,
+                                                     optimize_model=True,
+                                                     trust_remote_code=True,
+                                                     use_cache=True,
+                                                     torch_dtype=torch.float16,
+                                                     pipeline_parallel_stages=args.gpu_num)
+    except:
+        model = AutoModel.from_pretrained(model_path,
+                                          load_in_low_bit=low_bit,
+                                          optimize_model=True,
+                                          trust_remote_code=True,
+                                          use_cache=True,
+                                          pipeline_parallel_stages=args.gpu_num)
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)

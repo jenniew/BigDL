@@ -19,7 +19,7 @@
 
 ### 4. How to test?
 - [ ] N/A
-- [ ] Unit test
+- [ ] Unit test: Please manually trigger the PR Validation [here](https://github.com/intel-analytics/ipex-llm-workflow/actions/workflows/llm-PR-validation.yml) by inputting the PR number (e.g., `1234`). And paste your action link here once it has been successfully finished.
 - [ ] Application test
 - [ ] Document test
 - [ ] ...

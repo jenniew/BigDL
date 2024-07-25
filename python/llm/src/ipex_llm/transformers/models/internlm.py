@@ -42,6 +42,7 @@ from typing import Optional, Tuple, List
 import torch
 import torch.utils.checkpoint
 from torch import nn
+from ipex_llm.utils.common.log4Error import invalidInputError
 from ipex_llm.transformers.models.utils import should_use_fuse_rope, apply_rotary_pos_emb
 from ipex_llm.transformers.models.utils import apply_rotary_pos_emb_cache_freq_xpu
 from ipex_llm.transformers.models.utils import use_quantize_kv_cache, restore_fp8_kv_cache
@@ -307,10 +308,66 @@ def pre_process_attn_and_mlp(module: torch.nn.Module):
 def add_lora(x: torch.Tensor, result: torch.Tensor,
              im_mask: torch.Tensor = None, lora_scaling: float = 0,
              Plora_A: torch.nn.Linear = None, Plora_B: torch.nn.Linear = None):
-    if im_mask is not None and torch.sum(im_mask) > 0:
-        part_x = x[im_mask]
-        result[im_mask] += Plora_B(Plora_A(part_x) * lora_scaling)
-    return result
+    invalidInputError(x.dim() == 3 and result.dim() == 3,
+                      "`x` and `result` should have 3 dims")
+    if isinstance(im_mask, torch.Tensor) or len(im_mask) == 0:
+        return result
+    else:
+        for start_idx, end_idx in im_mask:
+            result[:, start_idx:end_idx, :] += Plora_B(
+                Plora_A(x[:, start_idx:end_idx, :]) * lora_scaling
+            )
+        return result
+
+
+def internlm_xcomposser2_model_forward_wrapper(origin_forward):
+    def internlm_xcomposser2_model_forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs
+    ):
+        im_mask = kwargs.get('im_mask', None)
+        if im_mask is None or im_mask.size(-1) <= 1 or im_mask.sum() == 0:
+            # decoding or no image input, `im_mask` is not needed
+            kwargs['im_mask'] = []
+        else:
+            # replace im_mask with start_idx and end_idx to improve performance
+            im_mask = im_mask.cpu().flatten().tolist()
+            length = len(im_mask)
+            new_mask = []
+            i = 0
+            while i < length:
+                while i < length and not im_mask[i]:
+                    i = i + 1
+                start_idx = i
+                while i < length and im_mask[i]:
+                    i = i + 1
+                end_idx = i
+                if start_idx != end_idx:
+                    new_mask.append((start_idx, end_idx))
+            kwargs['im_mask'] = new_mask
+        return origin_forward(
+            self=self,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            **kwargs
+        )
+    return internlm_xcomposser2_model_forward
 
 
 def internlm_xcomposser2_attention_forward(
@@ -352,12 +409,14 @@ def internlm_xcomposser2_attention_forward(
         kv_seq_len += past_key_value[0].shape[-2]
 
     # IPEX-LLM OPT: fuse rope
-    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
     if should_use_fuse_rope(hidden_states, position_ids, self.training):
-        query_states, key_states = apply_rotary_pos_emb_cache_freq_xpu(
-            query_states, key_states, sin, cos, "internlm", position_ids
-        )
+        # This fuse rope will get wrong result if context_length > max_position_embeddings (32768)
+        # we assume context_length <= 32768
+        import xe_addons
+        xe_addons.rotary_half_inplaced(self.rotary_emb.inv_freq, position_ids,
+                                       query_states, key_states)
     else:
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(
             query_states, key_states, cos, sin, position_ids, "internlm")
 
@@ -447,15 +506,16 @@ def internlm_xcomposser2_chat(
     repetition_penalty: float=1.005,
     meta_instruction:
     str = ('You are an AI assistant whose name is InternLM-XComposer (浦语·灵笔).\n'
-           '- InternLM-XComposer (浦语·灵笔) is a multi-modality conversational language model'
+           '- InternLM-XComposer (浦语·灵笔) is a multi-modality conversational language model '
            'that is developed by Shanghai AI Laboratory (上海人工智能实验室).'
            'It is designed to be helpful, honest, and harmless.\n'
-           '- InternLM-XComposer (浦语·灵笔) can understand and communicate fluently in the'
+           '- InternLM-XComposer (浦语·灵笔) can understand and communicate fluently in the '
            'language chosen by the user such as English and 中文.\n'
-           '- InternLM-XComposer (浦语·灵笔) is capable of comprehending and articulating'
+           '- InternLM-XComposer (浦语·灵笔) is capable of comprehending and articulating '
            'responses effectively based on the provided image.'),
     **kwargs,
 ):
+    # ipex-llm changes start: fix device and dtype conversion
     if image is None:
         inputs = self.build_inputs(tokenizer, query, history, meta_instruction)
         im_mask = torch.zeros(inputs['input_ids'].shape[:2]).bool()
@@ -463,11 +523,21 @@ def internlm_xcomposser2_chat(
         image = self.encode_img(image)
         inputs, im_mask = self.interleav_wrap_chat(tokenizer, query, image,
                                                    history, meta_instruction)
-    inputs = {
-        k: v.to(device=self.device, dtype=self.dtype)
-        for k, v in inputs.items() if torch.is_tensor(v)
-    }
+
+    new_inputs = {}
+    for k, v in inputs.items():
+        if torch.is_tensor(v):
+            if v.dtype.is_floating_point:
+                new_inputs[k] = v.to(device=self.device, dtype=self.dtype)
+            else:
+                # input_ids, don't convert its dtype
+                new_inputs[k] = v.to(device=self.device)
+        else:
+            new_inputs[k] = v
+    inputs = new_inputs
     im_mask = im_mask.to(self.device)
+    # ipex-llm changes end
+
     # also add end-of-assistant token in eos token id to avoid unnecessary generation
     eos_token_id = [
         tokenizer.eos_token_id,

@@ -71,7 +71,15 @@ def save_low_bit(self, *args, **kwargs):
 
     architectures = getattr(self.config, "architectures", None)
     model_type = getattr(self.config, "model_type", None)
-    self.save_pretrained(*args, **kwargs)
+    disk_embedding = getattr(self.config, "bigdl_disk_embedding", False)
+
+    if disk_embedding:
+        from ipex_llm.transformers.embedding import DiskEmbedding
+        self.apply(DiskEmbedding.restore_normal_embedding)
+        self.save_pretrained(*args, **kwargs)
+        self.apply(DiskEmbedding.replace_normal_embedding)
+    else:
+        self.save_pretrained(*args, **kwargs)
 
     if architectures:
         self.config.update({"architectures": architectures})
@@ -144,6 +152,8 @@ class _BaseAutoModelClass:
                             Default to be ``False``.
         :param cpu_embedding: Whether to replace the Embedding layer, may need to set it
             to ``True`` when running BigDL-LLM on GPU on Windows. Default to be ``False``.
+        :param disk_embedding: Whether to put the Embedding layer on disk to save memory.
+            Default to be ``False``.
         :param lightweight_bmm: Whether to replace the torch.bmm ops, may need to set it
             to ``True`` when running BigDL-LLM on GPU on Windows. Default to be ``False``.
         :param imatrix: str value, represent filename of importance matrix pretrained on
@@ -332,6 +342,11 @@ class _BaseAutoModelClass:
                 else:
                     kwargs["pretraining_tp"] = 1
             q_k = load_in_low_bit if load_in_low_bit else "sym_int4"
+
+            invalidInputError(q_k not in ["sym_int4_rtn", "sym_int8_rtn"],
+                              f"The dtype {q_k} is specified for NPU"
+                              "and cannot be used on CPU and GPU")
+
             imatrix_file = kwargs.pop("imatrix", None)
             if q_k in ["gguf_iq2_xxs", "gguf_iq2_xs", "gguf_iq1_s"]:
                 invalidInputError(imatrix_file is not None,
@@ -359,7 +374,7 @@ class _BaseAutoModelClass:
                                   "Please make sure you've called `init_pipeline_parallel()` "
                                   "and world size is the same as `pipeline_parallel_stages`")
                 from .pipeline_parallel import pipeline_parallel, pipeline_parallel_generate
-                model = pipeline_parallel(model, pipeline_parallel_stages)
+                model = pipeline_parallel(model, pipeline_parallel_stages, kwargs["torch_dtype"])
                 import types
                 # add pipeline_parallel_generate to pretrained model dynamically
                 model.pipeline_parallel_generate = types.MethodType(pipeline_parallel_generate,
@@ -430,6 +445,7 @@ class _BaseAutoModelClass:
             warnings.warn("replace_embedding is deprecated and will be removed in a future version,"
                           " please use cpu_embedding instead.", FutureWarning)
             cpu_embedding = True
+        disk_embedding = kwargs.pop("disk_embedding", False)
         lightweight_bmm = kwargs.pop("lightweight_bmm", False)
         quant_config = kwargs.pop("quantization_config", None)
         imatrix_data = kwargs.pop("imatrix_data", None)
@@ -502,13 +518,20 @@ class _BaseAutoModelClass:
         model = model.to("cpu")
         model = ggml_convert_low_bit(model, qtype, optimize_model,
                                      modules_to_not_convert=modules_to_not_convert,
-                                     cpu_embedding=cpu_embedding, lightweight_bmm=lightweight_bmm,
+                                     cpu_embedding=cpu_embedding,
+                                     lightweight_bmm=lightweight_bmm,
                                      torch_dtype=kwargs.get("torch_dtype", 'auto'),
                                      imatrix_data=imatrix_data,
                                      embedding_qtype=embedding_qtype,
                                      enable_xetla=enable_xetla,
                                      mixed_precision=mixed_precision)
-        model.config.update({"bigdl_transformers_low_bit": q_k})
+
+        if disk_embedding:
+            from ipex_llm.transformers.embedding import DiskEmbedding
+            model.apply(DiskEmbedding.replace_normal_embedding)
+
+        model.config.update({"bigdl_transformers_low_bit": q_k,
+                             "bigdl_disk_embedding": disk_embedding})
 
         # enable tie_word_embeddings for MPT
         # refer to https://huggingface.co/mosaicml/mpt-7b-chat/blob/main/modeling_mpt.py#L232
@@ -534,6 +557,9 @@ class _BaseAutoModelClass:
         :param pretrained_model_name_or_path: str value, Path to load the optimized model ckpt.
         :param optimize_model: boolean value, Whether to further optimize the low_bit llm model.
                                Default to be True.
+        :param pipeline_parallel_stages: int value, the number of GPUs allocated for
+            pipeline parallel. Default to be ``1``. Please set pipeline_parallel_stages > 1
+            to run pipeline parallel inference on multiple GPUs.
 
         :return: a model instance
         """
@@ -555,6 +581,7 @@ class _BaseAutoModelClass:
             warnings.warn("replace_embedding is deprecated and will be removed in a future version,"
                           " please use cpu_embedding instead.", FutureWarning)
             cpu_embedding = True
+        disk_embedding = kwargs.pop("disk_embedding", False)
         lightweight_bmm = kwargs.pop("lightweight_bmm", False)
         # Autofactory
         trust_remote_code = kwargs.pop("trust_remote_code", None)
@@ -579,6 +606,8 @@ class _BaseAutoModelClass:
         torch_dtype = kwargs.pop("torch_dtype", "auto")
         embedding_qtype = kwargs.pop("embedding_qtype", None)
         sharded_metadata = None
+
+        pipeline_parallel_stages = kwargs.pop("pipeline_parallel_stages", 1)
 
         config_dict, _ = PretrainedConfig.get_config_dict(pretrained_model_name_or_path)
         bigdl_transformers_low_bit = config_dict.pop("bigdl_transformers_low_bit", False)
@@ -689,7 +718,8 @@ class _BaseAutoModelClass:
         quant_device = "meta" if bigdl_lcmu_enabled else "cpu"
         model = ggml_convert_low_bit(model, qtype, optimize_model, device=quant_device,
                                      modules_to_not_convert=modules_to_not_convert,
-                                     cpu_embedding=cpu_embedding, lightweight_bmm=lightweight_bmm,
+                                     cpu_embedding=cpu_embedding,
+                                     lightweight_bmm=lightweight_bmm,
                                      embedding_qtype=embedding_qtype, torch_dtype=torch_dtype)
 
         if is_sharded:
@@ -731,6 +761,11 @@ class _BaseAutoModelClass:
         # make sure token embedding weights are still tied if needed
         model.tie_weights()
 
+        if disk_embedding:
+            from ipex_llm.transformers.embedding import DiskEmbedding
+            model.apply(DiskEmbedding.replace_normal_embedding)
+            model.config.update({"bigdl_disk_embedding": disk_embedding})
+
         # Set model in evaluation mode to deactivate DropOut modules by default
         model.eval()
 
@@ -750,6 +785,16 @@ class _BaseAutoModelClass:
         # rwkv model linear layers has been rescaled
         if model.config.model_type == "rwkv":
             model.rwkv.layers_are_rescaled = True
+
+        if pipeline_parallel_stages > 1:
+            from .pipeline_parallel import pipeline_parallel, pipeline_parallel_generate
+            model = pipeline_parallel(model, pipeline_parallel_stages, torch_dtype)
+            import types
+            # add pipeline_parallel_generate to pretrained model dynamically
+            model.pipeline_parallel_generate = types.MethodType(pipeline_parallel_generate,
+                                                                model)
+            torch.distributed.barrier()
+
         return model
 
 

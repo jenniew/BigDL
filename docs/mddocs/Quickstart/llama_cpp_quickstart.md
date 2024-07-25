@@ -4,12 +4,28 @@
 
 See the demo of running LLaMA2-7B on Intel Arc GPU below.
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/llama-cpp-arc.png)](https://llm-assets.readthedocs.io/en/latest/_images/llama-cpp-arc.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/llama-cpp-arc.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/llama-cpp-arc.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/llama-cpp-arc.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
 
 > [!NOTE]
 > `ipex-llm[cpp]==2.5.0b20240527` is consistent with [c780e75](https://github.com/ggerganov/llama.cpp/commit/c780e75305dba1f67691a8dc0e8bc8425838a452) of llama.cpp.
 >
 > Our latest version is consistent with [62bfef5](https://github.com/ggerganov/llama.cpp/commit/62bfef5194d5582486d62da3db59bf44981b7912) of llama.cpp.
+
+## Table of Contents
+- [Prerequisites](./llama_cpp_quickstart.md#0-prerequisites)
+- [Install IPEX-LLM for llama.cpp](./llama_cpp_quickstart.md#1-install-ipex-llm-for-llamacpp)
+- [Setup for running llama.cpp](./llama_cpp_quickstart.md#2-setup-for-running-llamacpp)
+- [Example: Running community GGUF models with IPEX-LLM](./llama_cpp_quickstart.md#3-example-running-community-gguf-models-with-ipex-llm)
+- [Troubleshooting](./llama_cpp_quickstart.md#troubleshooting)
+
+
 
 ## Quick Start
 This quickstart guide walks you through installing and running `llama.cpp` with `ipex-llm`.
@@ -24,11 +40,9 @@ Visit the [Install IPEX-LLM on Linux with Intel GPU](./install_linux_gpu.md), fo
 
 #### Windows (Optional)
 
-IPEX-LLM backend for llama.cpp only supports the more recent GPU drivers. Please make sure your GPU driver version is equal or newer than `31.0.101.5333`, otherwise you might find gibberish output. 
+Please make sure your GPU driver version is equal or newer than `31.0.101.5333`. If it is not, follow the instructions in [this section](./install_windows_gpu.md#optional-update-gpu-driver) to update your GPU driver; otherwise, you might encounter gibberish output. 
 
-If you have lower GPU driver version, visit the [Install IPEX-LLM on Windows with Intel GPU Guide](./install_windows_gpu.md), and follow [Update GPU driver](./install_windows_gpu.md#optional-update-gpu-driver).
-
-### 1 Install IPEX-LLM for llama.cpp
+### 1. Install IPEX-LLM for llama.cpp
 
 To use `llama.cpp` with IPEX-LLM, first ensure that `ipex-llm[cpp]` is installed.
 
@@ -52,7 +66,7 @@ To use `llama.cpp` with IPEX-LLM, first ensure that `ipex-llm[cpp]` is installed
 
 **After the installation, you should have created a conda environment, named `llm-cpp` for instance, for running `llama.cpp` commands with IPEX-LLM.**
 
-### 2 Setup for running llama.cpp
+### 2. Setup for running llama.cpp
 
 First you should create a directory to use `llama.cpp`, for instance, use following command to create a `llama-cpp` directory and enter it.
 ```cmd
@@ -103,6 +117,9 @@ To use GPU acceleration, several environment variables are required or recommend
   ```bash
   source /opt/intel/oneapi/setvars.sh
   export SYCL_CACHE_PERSISTENT=1
+  export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
+  # [optional] if you want to run on single GPU, use below command to limit GPU may improve performance
+  export ONEAPI_DEVICE_SELECTOR=level_zero:0
   ```
 
 - For **Windows users**:
@@ -111,16 +128,13 @@ To use GPU acceleration, several environment variables are required or recommend
 
   ```cmd
   set SYCL_CACHE_PERSISTENT=1
+  set SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
   ```
 
 > [!TIP]
-> If your local LLM is running on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), it is recommended to additionaly set the following environment variable for optimal performance:
->
-> ```bash
-> export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
-> ```
+> When your machine has multi GPUs and you want to run on one of them, you need to set `ONEAPI_DEVICE_SELECTOR=level_zero:[gpu_id]`, here `[gpu_id]` varies based on your requirement. For more details, you can refer to [this section](../Overview/KeyFeatures/multi_gpus_selection.md#2-oneapi-device-selector).
 
-### 3 Example: Running community GGUF models with IPEX-LLM
+### 3. Example: Running community GGUF models with IPEX-LLM
 
 Here we provide a simple example to show how to run a community GGUF model with IPEX-LLM.
 
@@ -135,7 +149,9 @@ Before running, you should download or copy community GGUF model to your current
   ./main -m mistral-7b-instruct-v0.1.Q4_K_M.gguf -n 32 --prompt "Once upon a time, there existed a little girl who liked to have adventures. She wanted to go to places and meet new people, and have fun" -t 8 -e -ngl 33 --color
   ```
 
-  > **Note**: For more details about meaning of each parameter, you can use `./main -h`.
+  > **Note**:
+  >
+  > For more details about meaning of each parameter, you can use `./main -h`.
 
 - For **Windows users**:
 
@@ -145,7 +161,9 @@ Before running, you should download or copy community GGUF model to your current
   main -m mistral-7b-instruct-v0.1.Q4_K_M.gguf -n 32 --prompt "Once upon a time, there existed a little girl who liked to have adventures. She wanted to go to places and meet new people, and have fun" -t 8 -e -ngl 33 --color
   ```
 
-  > **Note**: For more details about meaning of each parameter, you can use `main -h`.
+  > **Note**:
+  >
+  > For more details about meaning of each parameter, you can use `main -h`.
 
 #### Sample Output
 ```

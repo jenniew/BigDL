@@ -6,7 +6,20 @@
 
 *See the demo of a RAG workflow in Dify running LLaMA2-7B on Intel A770 GPU below.*
 
-[![Demo video](https://llm-assets.readthedocs.io/en/latest/_images/dify-rag-small.png)](https://llm-assets.readthedocs.io/en/latest/_images/dify-rag-small.mp4)
+<table width="100%">
+  <tr>
+    <td><a href="https://llm-assets.readthedocs.io/en/latest/_images/dify-rag-small.mp4"><img src="https://llm-assets.readthedocs.io/en/latest/_images/dify-rag-small.png"/></a></td>
+  </tr>
+  <tr>
+    <td align="center">You could also click <a href="https://llm-assets.readthedocs.io/en/latest/_images/dify-rag-small.mp4">here</a> to watch the demo video.</td>
+  </tr>
+</table>
+
+## Table of Contents
+- [Install and Start Ollama Service on Intel GPU](./dify_quickstart.md#1-install-and-start-ollama-service-on-intel-gpu)
+- [Install and Start Dify](./dify_quickstart.md#2-install-and-start-dify)
+- [How to Use Dify](./dify_quickstart.md#3-how-to-use-dify)
+
 
 
 ## Quickstart
