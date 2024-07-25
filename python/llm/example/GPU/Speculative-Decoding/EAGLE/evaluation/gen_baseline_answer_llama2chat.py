@@ -92,6 +92,7 @@ def ea_forward(input_ids, model, tokenizer, tree_choices, logits_processor=None,
     new_token = 0
 
     for idx in range(max_steps):
+        print("idx: ", idx)
         if logits_processor is not None:
             logits = outputs.logits[:, -1]
             logits = logits_processor(None, logits)
@@ -219,6 +220,7 @@ def get_model_answers(
                 tokenizer,
                 tree_choices,
                 logits_processor,
+                max_new_token
             )
 
             total_time = time.time() - start_time
@@ -284,6 +286,7 @@ def get_model_answers(
                         tokenizer,
                         tree_choices,
                         logits_processor,
+                        max_new_token
                     )
                     total_time = time.time() - start_time
                     output_ids = output_ids[0][len(input_ids[0]):]
